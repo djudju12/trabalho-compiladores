@@ -1,9 +1,11 @@
-PROCESS simple_process
+PROCESS 'simple_process'
 
 EVENTS
-    STARTER start = STARTER(DESCRIPTION 'Starter Event);
-    TASK event1 = TASK(DESCRIPTION 'Event 1');
+    start = STARTER('Starter Event')
+    event1 = TASK('Event 1')
+    event2 = TASK('Event 2')
 END
-    -| start
-    -> event1;
+    -> start
+    -> event1
+    -> event2
 END
