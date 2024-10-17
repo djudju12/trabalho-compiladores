@@ -7,7 +7,7 @@ build: src/main.c bin/
 	$(CC) -o bin/$(PROGRAM_NAME) src/main.c $(CFLAGS) $(CLIBS)
 
 run: build
-	./bin/$(PROGRAM_NAME) $(FILE)
+	./bin/$(PROGRAM_NAME) ./examples/simples.foo
 
 bin/:
 	mkdir -p bin

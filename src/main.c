@@ -425,7 +425,7 @@ Token next_token_fail_if_eof(Lexer *lexer) {
 
 typedef struct {
     Rectangle rect;
-    Event_Kind kind;
+    Symbol value;
     int points_to;
 } Screen_Object;
 
@@ -454,7 +454,7 @@ size_t push_obj(Screen *screen, Screen_Object obj) {
     return screen->objs_cnt++;
 }
 
-#define OBJ_SIZE 60
+#define OBJ_SIZE 100
 Rectangle screen_object_rect(Screen screen, Vector2 grid_pos) {
     Vector2 units = {screen.width / screen.cols, screen.height / screen.rows};
     return (Rectangle) {
@@ -470,34 +470,86 @@ void draw_arrow(Screen_Object from, Screen_Object to) {
     Vector2 v2_to   = { .x = to.rect.x                    , .y = to.rect.y + to.rect.height/2     };
 
     DrawLineV(v2_from, v2_to, BLACK);
-
     Vector2 v2_point = v2_to;
     v2_point.x -= 4;
     DrawCircleV(v2_point, 4, BLACK);
+}
 
+int measure_text_lines(Rectangle rect, const char **words, int word_count, int font_size) {
+    int space_left = rect.width;
+    Vector2 pos = { .x = rect.x, .y = rect.y };
+    int total_lines = 1;
+    for (int i = 0; i < word_count; i++) {
+        int word_len = MeasureText(words[i], font_size) + font_size;
+        if (word_len > space_left) {
+            space_left = rect.width - word_len;
+            pos.y += font_size;
+            pos.x = rect.x;
+            total_lines++;
+        } else {
+            space_left -= word_len;
+        }
+
+        pos.x += word_len;
+    }
+
+    return total_lines;
+}
+
+void draw_fitting_text(Rectangle rect, char *text, int font_size, int margin) {
+    int word_count = 0;
+    const char **words = TextSplit(text, ' ', &word_count);
+    int space_left = rect.width;
+    int total_lines = measure_text_lines(rect, words, word_count, font_size);
+    if (total_lines * font_size > rect.height) {
+        font_size = rect.height / total_lines;
+    }
+
+    rect.x += margin;
+    rect.y += margin;
+    rect.width -= margin*2;
+    rect.height -= margin*2;
+    Vector2 pos = { .x = rect.x, .y = rect.y };
+    for (int i = 0; i < word_count; i++) {
+        int word_len = MeasureText(words[i], font_size) + font_size;
+
+        if (word_len > space_left) {
+            space_left = rect.width - word_len;
+            pos.y += font_size;
+            pos.x = rect.x;
+        } else {
+            space_left -= word_len;
+        }
+
+        DrawText(words[i], pos.x, pos.y, font_size, BLACK);
+        pos.x += word_len;
+    }
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
     ASSERT(obj.rect.x < screen.cols*screen.width && obj.rect.y < screen.rows*screen.height && "Object out of bounds");
 
-    switch (obj.kind) {
+    if (obj.value.kind == EVENT) {
+        switch (obj.value.as.event.kind) {
 
-        case EVENT_STARTER: {
-            Vector2 pos = {obj.rect.x, obj.rect.y};
-            pos.x += obj.rect.width/2;
-            pos.y += obj.rect.height/2;
-            DrawCircleLinesV(pos, OBJ_SIZE/2, BLACK);
-        } break;
+            case EVENT_STARTER: {
+                Vector2 pos = {obj.rect.x, obj.rect.y};
+                pos.x += obj.rect.width/2;
+                pos.y += obj.rect.height/2;
+                DrawCircleV(pos, obj.rect.width/2, GREEN);
+            } break;
 
-        case EVENT_TASK: {
-            DrawRectangleRoundedLinesEx(obj.rect, 0.3f, 0, 1, BLACK);
-        } break;
+            case EVENT_TASK: {
+                DrawRectangleRoundedLinesEx(obj.rect, 0.3f, 0, 1, BLACK);
+                draw_fitting_text(obj.rect, obj.value.as.event.title, 15, 5);
+            } break;
 
-        default: ASSERT(0 && "Unreachable statement");
-    }
+            default: ASSERT(0 && "Unreachable statement");
+        }
 
-    if (obj.points_to > 0) {
-        draw_arrow(obj, screen.screen_objects[obj.points_to]);
+        if (obj.points_to > 0) {
+            draw_arrow(obj, screen.screen_objects[obj.points_to]);
+        }
     }
 }
 
@@ -552,7 +604,7 @@ void parse(Lexer *lexer, Screen *screen) {
             if (kv->value.obj_id < 0) {
                 Screen_Object obj = {
                     .rect = screen_object_rect(*screen, (Vector2){ .x = col++, .y = 0 }),
-                    .kind = kv->value.as.event.kind
+                    .value = kv->value
                 };
 
                 kv->value.obj_id = push_obj(screen, obj);
@@ -617,8 +669,10 @@ void parse_single_event(Lexer *lexer) {
             exit(EXIT_FAILURE);
         }
 
-        if (next_token_fail_if_eof(lexer).kind == TOKEN_STR) {
-            memcpy(kv->value.as.event.title, lexer->token.value, MAX_TOKEN_LEN);
+        if (kv->value.as.event.kind == EVENT_TASK) {
+            if (next_token_fail_if_eof(lexer).kind == TOKEN_STR) {
+                memcpy(kv->value.as.event.title, lexer->token.value, MAX_TOKEN_LEN);
+            }
         }
 
         if (next_token_fail_if_eof(lexer).kind != TOKEN_CLP) {
@@ -663,12 +717,6 @@ int main(int argc, char **argv) {
     }
 
     CloseWindow();
-
-    // do {
-    //     next_token(&lexer);
-    //     printf("<`%s`, %s>\n", lexer.token.value, TOKEN_DESC[lexer.token.kind]);
-    // } while (lexer.token.kind != TOKEN_EOF);
-
 
     return EXIT_SUCCESS;
 }
