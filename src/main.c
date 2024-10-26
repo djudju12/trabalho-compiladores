@@ -431,10 +431,12 @@ typedef struct {
 } Screen_Object;
 
 #define MAX_SCREEN_OBJECTS 512
+#define HEADER_HEIGHT 30
 
 typedef struct {
     Screen_Object screen_objects[MAX_SCREEN_OBJECTS];
     Font font;
+    int font_size;
     size_t objs_cnt;
     char title[MAX_TOKEN_LEN];
     int height, width;
@@ -517,7 +519,7 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
     rect.width -= margin*2;
     rect.height -= margin*2;
     Vector2 pos = { .x = rect.x, .y = rect.y };
-    const int spacing = font_size/10;
+    const float spacing = font_size/10.0;
     for (int i = 0; i < word_count; i++) {
         int word_len = MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
 
@@ -529,9 +531,23 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
             space_left -= word_len;
         }
 
-        DrawTextEx(font, words[i], pos, font_size, 1.5, BLACK);
+        DrawTextEx(font, words[i], pos, font_size, spacing, BLACK);
         pos.x += word_len;
     }
+}
+
+void draw_header(Screen screen) {
+    DrawLine(0, HEADER_HEIGHT, screen.width, HEADER_HEIGHT, BLACK);
+    const float font_size = screen.font_size * 1.5;
+    const float spacing = font_size/10.0;
+    Vector2 textMeasure = MeasureTextEx(screen.font, screen.title, font_size, spacing);
+
+    Vector2 pos = {
+        .x = screen.width/2 - textMeasure.x/2,
+        .y = HEADER_HEIGHT/2 - textMeasure.y/2
+    };
+
+    DrawTextEx(screen.font, screen.title, pos, font_size, font_size/10, BLACK);
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
@@ -557,7 +573,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
 
             case EVENT_TASK: {
                 DrawRectangleRoundedLines(world_obj_rect, 0.3f, 0, 1, BLACK);
-                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, 15, 5);
+                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
             } break;
 
             default: ASSERT(0 && "Unreachable statement");
@@ -576,21 +592,9 @@ void draw_obj(Screen screen, Screen_Object obj) {
 
 void parse(Lexer *lexer, Screen *screen) {
     void parse_events(Lexer *lexer, Screen *screen);
-    void parse_process(Lexer *lexer);
+    void parse_process(Lexer *lexer, Screen *screen);
 
-    next_token(lexer);
-    if (lexer->token.kind != TOKEN_PROCESS) {
-        PRINT_ERROR_FMT(lexer, "Expected new `PROCESS`, find `%s`", lexer->token.value);
-        exit(EXIT_FAILURE);
-    }
-
-    next_token_fail_if_eof(lexer);
-    if (lexer->token.kind != TOKEN_STR) {
-        PRINT_ERROR_FMT(lexer, "Expected name of the process, find `%s`", lexer->token.value);
-        exit(EXIT_FAILURE);
-    }
-
-    memcpy(screen->title, lexer->token.value, MAX_TOKEN_LEN);
+    parse_process(lexer, screen);
 
     next_token(lexer);
     if (lexer->token.kind == TOKEN_EVENTS) {
@@ -634,12 +638,20 @@ void parse(Lexer *lexer, Screen *screen) {
     }
 }
 
-void parse_process(Lexer *lexer) {
-    Token process_name = next_token(lexer);
-    if (process_name.kind != TOKEN_ID) {
-        PRINT_ERROR_FMT(lexer, "Expected process name, find `%s`", process_name.value);
+void parse_process(Lexer *lexer, Screen *screen) {
+    next_token(lexer);
+    if (lexer->token.kind != TOKEN_PROCESS) {
+        PRINT_ERROR_FMT(lexer, "Expected new `PROCESS`, find `%s`", lexer->token.value);
         exit(EXIT_FAILURE);
     }
+
+    next_token_fail_if_eof(lexer);
+    if (lexer->token.kind != TOKEN_STR) {
+        PRINT_ERROR_FMT(lexer, "Expected name of the process, find `%s`", lexer->token.value);
+        exit(EXIT_FAILURE);
+    }
+
+    memcpy(screen->title, lexer->token.value, MAX_TOKEN_LEN);
 }
 
 void parse_events(Lexer *lexer, Screen *screen) {
@@ -735,10 +747,11 @@ int main(int argc, char **argv) {
 
     InitWindow(screen.width, screen.height, screen.title);
     screen.font = LoadFont("./resources/Cascadia.ttf");
+    screen.font_size = 15;
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
-
+        draw_header(screen);
         for (size_t i = 0; i < screen.objs_cnt; i++) {
             draw_obj(screen, screen.screen_objects[i]);
         }

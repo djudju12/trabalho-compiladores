@@ -1,4 +1,4 @@
-PROCESS 'simple_process'
+PROCESS 'Simple Process'
 
 EVENTS
     start = STARTER()

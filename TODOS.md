@@ -1,5 +1,5 @@
 - [X] Permitir que a escala dos componentes seja alterada (start event menor)
-- [ ] Adicionar o nome do processo na gui
+- [X] Adicionar o nome do processo na gui
 - [ ] Adicionar subprocessos
 - [ ] Substituir as bolas por setas
 - [ ] Criar eventos multi choose
