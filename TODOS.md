@@ -1,0 +1,9 @@
+- [ ] Permitir que a escala dos componentes seja alterada (start event menor)
+- [ ] Adicionar o nome do processo na gui
+- [ ] Adicionar subprocessos
+- [ ] Substituir as bolas por setas
+- [ ] Criar eventos multi choose
+  - [ ] Como os eventos irão se conectar? Algoritmo de path finding?
+- [ ] Permitir a criação de diferentes eventos
+- [ ] Melhorar a fonte
+- [ ] Avaliar o uso de anti-aliasing

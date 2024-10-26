@@ -425,8 +425,9 @@ Token next_token_fail_if_eof(Lexer *lexer) {
 
 typedef struct {
     Rectangle rect;
-    Symbol value;
+    Symbol *value;
     int points_to;
+    bool ploted;
 } Screen_Object;
 
 #define MAX_SCREEN_OBJECTS 512
@@ -454,20 +455,25 @@ size_t push_obj(Screen *screen, Screen_Object obj) {
     return screen->objs_cnt++;
 }
 
-#define OBJ_SIZE 100
-Rectangle screen_object_rect(Screen screen, Vector2 grid_pos) {
-    Vector2 units = {screen.width / screen.cols, screen.height / screen.rows};
-    return (Rectangle) {
-        .height = OBJ_SIZE,
-        .width = OBJ_SIZE,
-        .x = grid_pos.x * units.x,
-        .y = grid_pos.y * units.y + (screen.height/2 - OBJ_SIZE/2)
-    };
+#define RECT_POS(rect) (Vector2) { .x = (rect).x, .y = (rect).y }
+Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_size) {
+    Vector2 units = { screen.width / screen.cols, screen.height / screen.rows };
+    return (Vector2) { .x = grid_pos.x * units.x, grid_pos.y * units.y + (screen.height/2 - obj_size/2) };
 }
 
-void draw_arrow(Screen_Object from, Screen_Object to) {
-    Vector2 v2_from = { .x = from.rect.x + from.rect.width, .y = from.rect.y + from.rect.height/2 };
-    Vector2 v2_to   = { .x = to.rect.x                    , .y = to.rect.y + to.rect.height/2     };
+void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
+    Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.width);
+
+    Vector2 v2_from = {
+        .x = world_from.x + from.rect.width,
+        .y = world_from.y + from.rect.height/2
+    };
+
+    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.width);
+    Vector2 v2_to = {
+        .x = world_to.x,
+        .y = world_to.y + to.rect.height/2
+    };
 
     DrawLineV(v2_from, v2_to, BLACK);
     Vector2 v2_point = v2_to;
@@ -501,7 +507,7 @@ void draw_fitting_text(Rectangle rect, char *text, int font_size, int margin) {
     const char **words = TextSplit(text, ' ', &word_count);
     int space_left = rect.width;
     int total_lines = measure_text_lines(rect, words, word_count, font_size);
-    if (total_lines * font_size > rect.height) {
+    if ((total_lines * font_size) > rect.height) {
         font_size = rect.height / total_lines;
     }
 
@@ -527,28 +533,36 @@ void draw_fitting_text(Rectangle rect, char *text, int font_size, int margin) {
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
-    ASSERT(obj.rect.x < screen.cols*screen.width && obj.rect.y < screen.rows*screen.height && "Object out of bounds");
+    Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.width);
+    Rectangle world_obj_rect = {
+        .x = world_obj_pos.x,
+        .y = world_obj_pos.y,
+        .width = obj.rect.width,
+        .height = obj.rect.height
+    };
 
-    if (obj.value.kind == EVENT) {
-        switch (obj.value.as.event.kind) {
+    ASSERT(world_obj_rect.x < screen.cols*screen.width && world_obj_rect.y < screen.rows*screen.height && "Object out of bounds");
+
+    if (obj.value->kind == EVENT) {
+        switch (obj.value->as.event.kind) {
 
             case EVENT_STARTER: {
-                Vector2 pos = {obj.rect.x, obj.rect.y};
-                pos.x += obj.rect.width/2;
-                pos.y += obj.rect.height/2;
-                DrawCircleV(pos, obj.rect.width/2, GREEN);
+                Vector2 pos = {world_obj_rect.x, world_obj_rect.y};
+                pos.x += world_obj_rect.width/2;
+                pos.y += world_obj_rect.height/2;
+                DrawCircleV(pos, world_obj_rect.width/2, GREEN);
             } break;
 
             case EVENT_TASK: {
-                DrawRectangleRoundedLinesEx(obj.rect, 0.3f, 0, 1, BLACK);
-                draw_fitting_text(obj.rect, obj.value.as.event.title, 15, 5);
+                DrawRectangleRoundedLines(world_obj_rect, 0.3f, 0, 1, BLACK);
+                draw_fitting_text(world_obj_rect, obj.value->as.event.title, 15, 5);
             } break;
 
             default: ASSERT(0 && "Unreachable statement");
         }
 
         if (obj.points_to > 0) {
-            draw_arrow(obj, screen.screen_objects[obj.points_to]);
+            draw_arrow(screen, obj, screen.screen_objects[obj.points_to]);
         }
     }
 }
@@ -559,7 +573,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
 \*******************************************************************/
 
 void parse(Lexer *lexer, Screen *screen) {
-    void parse_events(Lexer *lexer);
+    void parse_events(Lexer *lexer, Screen *screen);
     void parse_process(Lexer *lexer);
 
     next_token(lexer);
@@ -578,14 +592,15 @@ void parse(Lexer *lexer, Screen *screen) {
 
     next_token(lexer);
     if (lexer->token.kind == TOKEN_EVENTS) {
-        parse_events(lexer);
+        parse_events(lexer, screen);
     }
 
     int col = 0;
     Symbol *last = NULL;
     while (lexer->token.kind != TOKEN_END) {
         if (lexer->token.kind == TOKEN_NEXT) {
-            if (next_token_fail_if_eof(lexer).kind != TOKEN_ID) {
+            next_token_fail_if_eof(lexer);
+            if (lexer->token.kind != TOKEN_ID) {
                 PRINT_ERROR_FMT(lexer, "Expected identifier, found %s", lexer->token.value);
                 exit(EXIT_FAILURE);
             }
@@ -601,16 +616,13 @@ void parse(Lexer *lexer, Screen *screen) {
                 exit(EXIT_FAILURE);
             }
 
-            if (kv->value.obj_id < 0) {
-                Screen_Object obj = {
-                    .rect = screen_object_rect(*screen, (Vector2){ .x = col++, .y = 0 }),
-                    .value = kv->value
-                };
-
-                kv->value.obj_id = push_obj(screen, obj);
+            Screen_Object *obj = &screen->screen_objects[kv->value.obj_id];
+            if (!obj->ploted) {
+                obj->rect.x = col++;
+                obj->ploted = true;
             }
 
-            if (last != NULL) {
+            if (last != NULL && kv->value.obj_id >= 0) {
                 screen->screen_objects[last->obj_id].points_to = kv->value.obj_id;
             }
 
@@ -628,29 +640,31 @@ void parse_process(Lexer *lexer) {
     }
 }
 
-void parse_events(Lexer *lexer) {
-    void parse_single_event(Lexer *lexer);
+void parse_events(Lexer *lexer, Screen *screen) {
+    void parse_single_event(Lexer *lexer, Screen *screen);
     ASSERT(lexer->token.kind == TOKEN_EVENTS && "Unexpected token");
 
     next_token_fail_if_eof(lexer);
     while (lexer->token.kind != TOKEN_END) {
-        parse_single_event(lexer);
+        parse_single_event(lexer, screen);
     }
 
     next_token_fail_if_eof(lexer);
 }
 
-void parse_single_event(Lexer *lexer) {
+void parse_single_event(Lexer *lexer, Screen *screen) {
     if (lexer->token.kind == TOKEN_ID) {
         hm_put(&lexer->symbols, lexer->token.value, (Symbol){ .kind = EVENT, .obj_id = -1 });
         Key_Value *kv = hm_get(&lexer->symbols, lexer->token.value);
 
-        if (next_token_fail_if_eof(lexer).kind != TOKEN_ATR) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind != TOKEN_ATR) {
             PRINT_ERROR_FMT(lexer, "Expected `=`, find %s", lexer->token.value);
             exit(EXIT_FAILURE);
         }
 
-        if (next_token_fail_if_eof(lexer).kind != TOKEN_TYPE) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind != TOKEN_TYPE) {
             PRINT_ERROR_FMT(lexer, "Expected type definition, find %s", lexer->token.value);
             exit(EXIT_FAILURE);
         }
@@ -664,18 +678,31 @@ void parse_single_event(Lexer *lexer) {
             exit(EXIT_FAILURE);
         }
 
-        if (next_token_fail_if_eof(lexer).kind != TOKEN_OPP) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind != TOKEN_OPP) {
             PRINT_ERROR(lexer, "Syntax error");
             exit(EXIT_FAILURE);
         }
 
+        Screen_Object obj = {
+            .rect = { .height = 100, .width = 100, .x = 0, .y = 0 },
+            .value = &kv->value
+        };
+
         if (kv->value.as.event.kind == EVENT_TASK) {
-            if (next_token_fail_if_eof(lexer).kind == TOKEN_STR) {
+            next_token_fail_if_eof(lexer);
+            if (lexer->token.kind == TOKEN_STR) {
                 memcpy(kv->value.as.event.title, lexer->token.value, MAX_TOKEN_LEN);
             }
+            kv->value.obj_id = push_obj(screen, obj);
+        } else if (kv->value.as.event.kind == EVENT_STARTER) {
+            obj.rect.height *= 0.5;
+            obj.rect.width *= 0.5;
+            kv->value.obj_id = push_obj(screen, obj);
         }
 
-        if (next_token_fail_if_eof(lexer).kind != TOKEN_CLP) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind != TOKEN_CLP) {
             PRINT_ERROR(lexer, "Syntax error");
             exit(EXIT_FAILURE);
         }
