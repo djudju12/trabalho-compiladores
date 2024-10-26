@@ -5,6 +5,7 @@ EVENTS
     event1 = TASK('Encomendar pizza')
     event2 = TASK('Event 2')
 END
+
     -> start
     -> event1
     -> event2

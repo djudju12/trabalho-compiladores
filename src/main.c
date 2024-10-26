@@ -434,6 +434,7 @@ typedef struct {
 
 typedef struct {
     Screen_Object screen_objects[MAX_SCREEN_OBJECTS];
+    Font font;
     size_t objs_cnt;
     char title[MAX_TOKEN_LEN];
     int height, width;
@@ -502,7 +503,7 @@ int measure_text_lines(Rectangle rect, const char **words, int word_count, int f
     return total_lines;
 }
 
-void draw_fitting_text(Rectangle rect, char *text, int font_size, int margin) {
+void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int margin) {
     int word_count = 0;
     const char **words = TextSplit(text, ' ', &word_count);
     int space_left = rect.width;
@@ -516,8 +517,9 @@ void draw_fitting_text(Rectangle rect, char *text, int font_size, int margin) {
     rect.width -= margin*2;
     rect.height -= margin*2;
     Vector2 pos = { .x = rect.x, .y = rect.y };
+    const int spacing = font_size/10;
     for (int i = 0; i < word_count; i++) {
-        int word_len = MeasureText(words[i], font_size) + font_size;
+        int word_len = MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
 
         if (word_len > space_left) {
             space_left = rect.width - word_len;
@@ -527,7 +529,7 @@ void draw_fitting_text(Rectangle rect, char *text, int font_size, int margin) {
             space_left -= word_len;
         }
 
-        DrawText(words[i], pos.x, pos.y, font_size, BLACK);
+        DrawTextEx(font, words[i], pos, font_size, 1.5, BLACK);
         pos.x += word_len;
     }
 }
@@ -555,7 +557,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
 
             case EVENT_TASK: {
                 DrawRectangleRoundedLines(world_obj_rect, 0.3f, 0, 1, BLACK);
-                draw_fitting_text(world_obj_rect, obj.value->as.event.title, 15, 5);
+                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, 15, 5);
             } break;
 
             default: ASSERT(0 && "Unreachable statement");
@@ -732,6 +734,7 @@ int main(int argc, char **argv) {
     parse(&lexer, &screen);
 
     InitWindow(screen.width, screen.height, screen.title);
+    screen.font = LoadFont("./resources/Cascadia.ttf");
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
