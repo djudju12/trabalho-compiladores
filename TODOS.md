@@ -7,3 +7,4 @@
 - [ ] Permitir a criação de diferentes eventos
 - [ ] Melhorar a fonte
 - [ ] Avaliar o uso de anti-aliasing
+- [ ] Arrumar a linha e coluna que o error hadling ta mandando

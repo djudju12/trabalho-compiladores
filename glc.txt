@@ -1,0 +1,8 @@
+S : "PROCESS" STR "SUBPROCESS" STR C "END"
+C : "EVENTS" D E
+D : ATR D | "END"
+E : "->" id E | "END"
+ATR : id "=" FN
+FN : type(STR)
+STR : '[WORD|" "|\t|SYMB]*'
+type : "STARTER" | "TASK"

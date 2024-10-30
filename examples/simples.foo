@@ -1,12 +1,9 @@
-PROCESS 'Simple Process'
-
-EVENTS
-    start = STARTER()
-    event1 = TASK('Encomendar pizza')
-    event2 = TASK('Event 2')
-END
-
-    -> start
-    -> event1
-    -> event2
-END
+<process name='Simple Process'>
+    <subprocess id='tal' name='Tal'>
+        <events>
+            <starter id='start' points='event1'/>
+            <task id='event1' name='Encomendar Pizza' points='event3'/>
+            <task id='event2' name='Opa Gangan stile'/>
+        </events>
+    </subprocess>
+</process>
