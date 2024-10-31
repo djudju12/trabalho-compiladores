@@ -67,7 +67,6 @@ CLEAN_UP:
 #define MAX_TOKEN_LEN 256
 #define HASHMAP_CAPACITY 16384
 #define HASHMAP_INDEX(h) (h & (HASHMAP_CAPACITY - 1))
-#define MAX_SYMBOLS
 
 typedef enum {
     EVENT_STARTER = 0,
@@ -104,6 +103,7 @@ typedef struct {
 void symb_name(char *dest, char *namespace, char *name) {
     size_t i = 0;
     for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++)             dest[i] = namespace[i];
+    dest[i++] = '.';
     for (size_t j = 0; i < MAX_TOKEN_LEN && name[j] != '\0'; i++, j++) dest[i] = name[j];
     dest[i] = '\0';
 }
@@ -175,12 +175,6 @@ enum Token_Kind {
     TOKEN_EOF         ,
     TOKEN_TYPE        ,
     TOKEN_SLASH       ,
-
-    TOKEN_END         ,
-    TOKEN_NEXT        ,
-    TOKEN_OPP         ,
-    TOKEN_CLP         ,
-    TOKEN_EOE         ,
     __TOKENS_COUNT
 };
 
@@ -190,18 +184,11 @@ char *TOKEN_DESC[] = {
     [TOKEN_EVENTS]      = "EVENTS",
     [TOKEN_TYPE]        = "TYPE",
     [TOKEN_ID]          = "ID",
-    [TOKEN_END]         = "END",
     [TOKEN_STR]         = "STRING",
     [TOKEN_ATR]         = "ASSIGNMENT",
     [TOKEN_OPTAG]       = "OPEN TAG",
     [TOKEN_CLTAG]       = "CLOSE TAG",
     [TOKEN_SLASH]       = "SLASH",
-
-
-    [TOKEN_CLP]         = "CLOSE_PAREN",
-    [TOKEN_OPP]         = "OPEN_PAREN",
-    [TOKEN_EOE]         = "EOE",
-    [TOKEN_NEXT]        = "NEXT",
     [TOKEN_EOF]         = "EOF"
 };
 
@@ -312,8 +299,8 @@ typedef struct {
 } Lexer;
 
 void init_lexer(Lexer *lexer, const char *file_path) {
-    lexer->col = 0;
-    lexer->row = 0;
+    lexer->col = 1;
+    lexer->row = 1;
     lexer->file_path = file_path;
     lexer->content = read_file(file_path);
     lexer->symbols.len = 0;
@@ -411,20 +398,18 @@ Token next_token(Lexer *lexer) {
     return lexer->token;
 }
 
-Token next_token_fail_if_eof(Lexer *lexer) {
+void next_token_fail_if_eof(Lexer *lexer) {
     next_token(lexer);
     if (lexer->token.kind == TOKEN_EOF) {
         PRINT_ERROR(lexer, "Unexpected end of file");
         exit(EXIT_FAILURE);
     }
-
-    return lexer->token;
 }
 
-Token assert_next_token(Lexer *lexer, enum Token_Kind expected) {
+void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
     next_token(lexer);
     if (lexer->token.kind != expected) {
-        PRINT_ERROR_FMT(lexer, "Unexpected token %s", lexer->token.value);
+        PRINT_ERROR_FMT(lexer, "Expected %s, found `%s`", TOKEN_DESC[expected], lexer->token.value);
         exit(EXIT_FAILURE);
     }
 }
@@ -587,7 +572,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
             } break;
 
             case EVENT_TASK: {
-                DrawRectangleRoundedLines(world_obj_rect, 0.3f, 0, 1, BLACK);
+                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, 1, BLACK);
                 draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
             } break;
 
@@ -604,10 +589,10 @@ void draw_obj(Screen screen, Screen_Object obj) {
 | Section: Parser                                                   |
 | TODO: Write somehting about the implementation of the Parser      |
 \*******************************************************************/
+void parse(Lexer *lexer, Screen *screen);
 void parse_process(Lexer *lexer, Screen *screen);
 void parse_events(Lexer *lexer, Screen *screen, char *namespace);
-void parse_single_event(Lexer *lexer, Screen *screen, char *namespace);
-void parse_actions(Lexer *lexer, Screen *screen, char *namespace);
+void track_arrows(Lexer *lexer, Screen *screen);
 
 void parse(Lexer *lexer, Screen *screen) {
     parse_process(lexer, screen);
@@ -617,31 +602,38 @@ void parse(Lexer *lexer, Screen *screen) {
         next_token_fail_if_eof(lexer);
         if (lexer->token.kind == TOKEN_SLASH) {
             assert_next_token(lexer, TOKEN_PROCESS);
+            assert_next_token(lexer, TOKEN_CLTAG);
             break;
         }
 
         if (lexer->token.kind != TOKEN_SUBPROCESS) {
-            PRINT_ERROR(lexer, "Expected new subprocess");
+            PRINT_ERROR(lexer, "Expected new subprocess or end of process");
             exit(EXIT_FAILURE);
         }
 
         bool id_finded = false;
-        char subprocess_name[MAX_TOKEN_LEN];
-        while (lexer->token.kind != TOKEN_CLTAG) {
-            assert_next_token(lexer, TOKEN_ID);
+        char subprocess_name[MAX_TOKEN_LEN] = {0};
+        for (;;) {
+            next_token_fail_if_eof(lexer);
+            if (lexer->token.kind == TOKEN_CLTAG) break;
+            if (lexer->token.kind != TOKEN_ID) {
+                PRINT_ERROR(lexer, "Syntax error");
+                exit(EXIT_FAILURE);
+            }
+
             if (strncmp(lexer->token.value, "id", 3) == 0) {
                 assert_next_token(lexer, TOKEN_ATR);
                 assert_next_token(lexer, TOKEN_STR);
                 memcpy(subprocess_name, lexer->token.value, MAX_TOKEN_LEN);
                 id_finded = true;
             } else if (strncmp(lexer->token.value, "name", 5) == 0) {
+                assert_next_token(lexer, TOKEN_ATR);
+                assert_next_token(lexer, TOKEN_STR);
                 /* TODO: criar o objeto que separará os subprocessos */
             } else {
                 PRINT_ERROR_FMT(lexer, "Unexpected attribute name %s for subprocess", lexer->token.value);
                 exit(EXIT_FAILURE);
             }
-
-            next_token_fail_if_eof(lexer);
         }
 
         if (!id_finded) {
@@ -650,7 +642,13 @@ void parse(Lexer *lexer, Screen *screen) {
         }
 
         parse_events(lexer, screen, subprocess_name);
+        assert_next_token(lexer, TOKEN_OPTAG);
+        assert_next_token(lexer, TOKEN_SLASH);
+        assert_next_token(lexer, TOKEN_SUBPROCESS);
+        assert_next_token(lexer, TOKEN_CLTAG);
     }
+
+    track_arrows(lexer, screen);
 }
 
 void parse_process(Lexer *lexer, Screen *screen) {
@@ -667,16 +665,14 @@ void parse_process(Lexer *lexer, Screen *screen) {
     }
 
     next_token_fail_if_eof(lexer);
-    if (lexer->token.kind == TOKEN_CLP) {
+    if (lexer->token.kind != TOKEN_ID) {
         PRINT_ERROR(lexer, "Process need to have an `name` attribute");
         exit(EXIT_FAILURE);
     }
 
-    assert_next_token(lexer, TOKEN_ID);
-
     const char *token_value = lexer->token.value;
     if (strncmp(token_value, "name", 5) != 0) {
-        PRINT_ERROR_FMT(lexer, "Invalid attribute %s for tag process", lexer->token.value);
+        PRINT_ERROR_FMT(lexer, "Invalid attribute `%s` for tag process", lexer->token.value);
         exit(EXIT_SUCCESS);
     }
 
@@ -689,13 +685,10 @@ void parse_process(Lexer *lexer, Screen *screen) {
 
 void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
     assert_next_token(lexer, TOKEN_OPTAG);
-    next_token_fail_if_eof(lexer);
-    if (lexer->token.kind != TOKEN_EVENTS) {
-        PRINT_ERROR_FMT(lexer, "Unexpected tag %s, expected events", lexer->token.value);
-        exit(EXIT_FAILURE);
-    }
-
+    assert_next_token(lexer, TOKEN_EVENTS);
     assert_next_token(lexer, TOKEN_CLTAG);
+
+    int col = 0;
     for (;;) {
         assert_next_token(lexer, TOKEN_OPTAG);
         next_token_fail_if_eof(lexer);
@@ -718,6 +711,7 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
 
             char buffer[MAX_TOKEN_LEN];
             Key_Value *kv = NULL;
+            bool id_founded = false;
             for (;;) {
                 next_token_fail_if_eof(lexer);
                 if (lexer->token.kind == TOKEN_SLASH) {
@@ -725,28 +719,42 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
                     break;
                 }
 
-                assert_next_token(lexer, TOKEN_ID);
+                if (lexer->token.kind != TOKEN_ID) {
+                    PRINT_ERROR(lexer, "Syntax error");
+                    exit(EXIT_FAILURE);
+                }
+
                 memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
                 assert_next_token(lexer, TOKEN_ATR);
                 assert_next_token(lexer, TOKEN_STR);
-                if (strncmp(buffer, "id", 3) == 0) {
+                if (!id_founded && strncmp(buffer, "id", 3) == 0) {
                     symb_name(buffer, namespace, lexer->token.value);
                     hm_put(&lexer->symbols, buffer, symbol);
                     kv = hm_get(&lexer->symbols, buffer);
-                } else if (strncmp(buffer, "name", 5) == 0) {
-                    memcpy(symbol.as.event.title, lexer->token.value, MAX_TOKEN_LEN);
-                } else if (strncmp(buffer, "points", 7)) {
-                    memcpy(symbol.as.event.points_to, lexer->token.value, MAX_TOKEN_LEN);
-                } else { /* ignore */ }
+                    id_founded = true;
+                } else if (id_founded && kv != NULL) {
+                    if (strncmp(buffer, "name", 5) == 0) {
+                        memcpy(kv->value.as.event.title, lexer->token.value, MAX_TOKEN_LEN);
+                    } else if (strncmp(buffer, "points", 7) == 0) {
+                        symb_name(buffer, namespace, lexer->token.value);
+                        memcpy(kv->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
+                    } else {
+                        PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`", buffer);
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
+                    exit(EXIT_FAILURE);
+                }
             }
 
-            if (kv == NULL) {
+            if (!id_founded) {
                 PRINT_ERROR(lexer, "Event need to have and `id`");
                 exit(EXIT_FAILURE);
             }
 
             Screen_Object obj = {
-                .rect = { .height = 100, .width = 100, .x = 0, .y = 0 },
+                .rect = { .height = 100, .width = 100, .x = col++, .y = 0 },
                 .value = &kv->value
             };
 
@@ -756,8 +764,7 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
             }
 
             kv->value.obj_id = push_obj(screen, obj);
-        } else {
-            assert_next_token(lexer, TOKEN_SLASH);
+        } else if (lexer->token.kind == TOKEN_SLASH) {
             next_token_fail_if_eof(lexer);
             if (lexer->token.kind == TOKEN_EVENTS) {
                 assert_next_token(lexer, TOKEN_CLTAG);
@@ -766,51 +773,27 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
 
             PRINT_ERROR_FMT(lexer, "Unexpected closing tag %s. Perhaps you want to close `events`?", lexer->token.value);
             exit(EXIT_FAILURE);
+        } else {
+            PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
+            exit(EXIT_FAILURE);
         }
     }
 }
 
-void parse_actions(Lexer *lexer, Screen *screen, char *namespace) {
-    int col = 0;
-    Symbol *last = NULL;
-    while (lexer->token.kind != TOKEN_END) {
-        if (lexer->token.kind != TOKEN_NEXT) {
-            PRINT_ERROR_FMT(lexer, "Unexpected token %s", lexer->token.value);
-            exit(EXIT_FAILURE);
+void track_arrows(Lexer *lexer, Screen *screen) {
+    for (size_t i = 0; i < HASHMAP_CAPACITY; i++) {
+        if (lexer->symbols.entries[i].occupied &&
+            lexer->symbols.entries[i].value.kind == EVENT &&
+            lexer->symbols.entries[i].value.obj_id >= 0 &&
+            lexer->symbols.entries[i].value.as.event.points_to[0] != '\0'
+        ) {
+            Screen_Object *from = &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
+            Key_Value *to = hm_get(&lexer->symbols, lexer->symbols.entries[i].value.as.event.points_to);
+
+            if (to != NULL && to->occupied && to->value.obj_id >= 0 && to->value.obj_id != lexer->symbols.entries[i].value.obj_id) {
+                from->points_to = to->value.obj_id;
+            }
         }
-
-        next_token_fail_if_eof(lexer);
-        if (lexer->token.kind != TOKEN_ID) {
-            PRINT_ERROR_FMT(lexer, "Expected identifier, found %s", lexer->token.value);
-            exit(EXIT_FAILURE);
-        }
-
-        char buffer[MAX_TOKEN_LEN];
-        symb_name(buffer, namespace, lexer->token.value);
-
-        Key_Value *kv = hm_get(&lexer->symbols, buffer);
-        if (kv == NULL) {
-            PRINT_ERROR_FMT(lexer, "Identifier `%s` does not exists", lexer->token.value);
-            exit(EXIT_FAILURE);
-        }
-
-        if (kv->value.kind != EVENT) {
-            PRINT_ERROR(lexer, "Invalid identifier, expected `Event`");
-            exit(EXIT_FAILURE);
-        }
-
-        Screen_Object *obj = &screen->screen_objects[kv->value.obj_id];
-        if (!obj->ploted) {
-            obj->rect.x = col++;
-            obj->ploted = true;
-        }
-
-        if (last != NULL && kv->value.obj_id >= 0) {
-            screen->screen_objects[last->obj_id].points_to = kv->value.obj_id;
-        }
-
-        last = &kv->value;
-        next_token(lexer);
     }
 }
 
@@ -823,34 +806,35 @@ int main(int argc, char **argv) {
 
     char *file_path = shift_args(&argc, &argv);
     static Lexer lexer = {0};
-    // static Screen screen = {0};
+    static Screen screen = {0};
 
     init_lexer(&lexer, file_path);
-    next_token(&lexer);
-    while (lexer.token.kind != TOKEN_EOF) {
-        printf("(`%s`, %s)\n", lexer.token.value, TOKEN_DESC[lexer.token.kind]);
-        next_token(&lexer);
-    }
 
-    // init_screen(&screen);
-
-    // parse(&lexer, &screen);
-
-    // InitWindow(screen.width, screen.height, screen.title);
-    // screen.font = LoadFont("./resources/Cascadia.ttf");
-    // screen.font_size = 15;
-    // while (!WindowShouldClose()) {
-    //     BeginDrawing();
-    //     ClearBackground(WHITE);
-    //     draw_header(screen);
-    //     for (size_t i = 0; i < screen.objs_cnt; i++) {
-    //         draw_obj(screen, screen.screen_objects[i]);
-    //     }
-
-    //     EndDrawing();
+    // next_token(&lexer);
+    // while (lexer.token.kind != TOKEN_EOF) {
+    //     printf("(`%s`, %s)\n", lexer.token.value, TOKEN_DESC[lexer.token.kind]);
+    //     next_token(&lexer);
     // }
 
-    // CloseWindow();
+    init_screen(&screen);
+
+    parse(&lexer, &screen);
+
+    InitWindow(screen.width, screen.height, screen.title);
+    screen.font = LoadFont("./resources/Cascadia.ttf");
+    screen.font_size = 15;
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(WHITE);
+        draw_header(screen);
+        for (size_t i = 0; i < screen.objs_cnt; i++) {
+            draw_obj(screen, screen.screen_objects[i]);
+        }
+
+        EndDrawing();
+    }
+
+    CloseWindow();
 
     return EXIT_SUCCESS;
 }

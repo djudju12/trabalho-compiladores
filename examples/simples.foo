@@ -2,7 +2,7 @@
     <subprocess id='tal' name='Tal'>
         <events>
             <starter id='start' points='event1'/>
-            <task id='event1' name='Encomendar Pizza' points='event3'/>
+            <task id='event1' name='Encomendar Pizza' points='event2'/>
             <task id='event2' name='Opa Gangan stile'/>
         </events>
     </subprocess>
