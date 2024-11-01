@@ -1,25 +1,22 @@
-#include <stdio.h>
 #include <assert.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
 #include <ctype.h>
-
 #include <raylib.h>
 #include <raymath.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define ASSERT assert
-#define ARRAY_SIZE(arr) (sizeof(arr)/sizeof(arr[0]))
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
-char* shift_args(int *argc, char ***argv) {
+char *shift_args(int *argc, char ***argv) {
     ASSERT(*argc > 0 && "Shifting empty command line arguments!");
     (*argc)--;
     return *(*argv)++;
 }
 
-void usage(char *program_name) {
-    printf("Usage: %s <FILE>\n", program_name);
-}
+void usage(char *program_name) { printf("Usage: %s <FILE>\n", program_name); }
 
 char *read_file(const char *file_path) {
     char *content = NULL;
@@ -57,7 +54,6 @@ CLEAN_UP:
     return NULL;
 }
 
-
 /*******************************************************************\
 | Section: Symbols Table                                            |
 | A simple and static implementations of a hash table that uses     |
@@ -68,14 +64,9 @@ CLEAN_UP:
 #define HASHMAP_CAPACITY 16384
 #define HASHMAP_INDEX(h) (h & (HASHMAP_CAPACITY - 1))
 
-typedef enum {
-    EVENT_STARTER = 0,
-    EVENT_TASK
-} Event_Kind;
+typedef enum { EVENT_STARTER = 0, EVENT_TASK, EVENT_INVALID } Event_Kind;
 
-typedef enum {
-    EVENT = 0
-} Symb_Kind;
+typedef enum { SYMB_EVENT = 0, SYMB_SUBPROCESS } Symb_Kind;
 
 typedef struct {
     Symb_Kind kind;
@@ -85,6 +76,10 @@ typedef struct {
             char title[MAX_TOKEN_LEN];
             char points_to[MAX_TOKEN_LEN];
         } event;
+
+        struct Subprocess_Symb {
+            char name[MAX_TOKEN_LEN];
+        } subprocess;
     } as;
     int obj_id;
 } Symbol;
@@ -102,16 +97,22 @@ typedef struct {
 
 void symb_name(char *dest, char *namespace, char *name) {
     size_t i = 0;
-    for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++)             dest[i] = namespace[i];
+    for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++)
+        dest[i] = namespace[i];
+
     dest[i++] = '.';
-    for (size_t j = 0; i < MAX_TOKEN_LEN && name[j] != '\0'; i++, j++) dest[i] = name[j];
+
+    for (size_t j = 0; i < MAX_TOKEN_LEN && name[j] != '\0'; i++, j++) {
+        dest[i] = name[j];
+    }
+
     dest[i] = '\0';
 }
 
 size_t hash(char *key, size_t *key_len) {
     size_t h = 0;
     size_t i = 0;
-    for (; key[i] != '\0' ; i++) {
+    for (; key[i] != '\0'; i++) {
         h = ((h << 5) - h) + (unsigned char)key[i];
     }
 
@@ -132,7 +133,7 @@ Key_Value *hm_get(Hash_Map *map, char *key) {
         entry = &map->entries[HASHMAP_INDEX(h)];
     }
 
-    return entry->occupied? entry : NULL;
+    return entry->occupied ? entry : NULL;
 }
 
 void hm_put(Hash_Map *map, char *key, Symbol symbol) {
@@ -156,7 +157,6 @@ void hm_put(Hash_Map *map, char *key, Symbol symbol) {
     } else {
         // TODO: update symbol. Will be needed soon
     }
-
 }
 
 /*******************************************************************\
@@ -164,35 +164,31 @@ void hm_put(Hash_Map *map, char *key, Symbol symbol) {
 \*******************************************************************/
 
 enum Token_Kind {
-    TOKEN_PROCESS = 0 ,
-    TOKEN_OPTAG       ,
-    TOKEN_CLTAG       ,
-    TOKEN_SUBPROCESS  ,
-    TOKEN_EVENTS      ,
-    TOKEN_ID          ,
-    TOKEN_STR         ,
-    TOKEN_ATR         ,
-    TOKEN_EOF         ,
-    TOKEN_TYPE        ,
-    TOKEN_SLASH       ,
+    TOKEN_PROCESS = 0,
+    TOKEN_OPTAG,
+    TOKEN_CLTAG,
+    TOKEN_SUBPROCESS,
+    TOKEN_EVENTS,
+    TOKEN_ID,
+    TOKEN_STR,
+    TOKEN_ATR,
+    TOKEN_EOF,
+    TOKEN_TYPE,
+    TOKEN_SLASH,
     __TOKENS_COUNT
 };
 
 char *TOKEN_DESC[] = {
-    [TOKEN_PROCESS]     = "PROCESS",
-    [TOKEN_SUBPROCESS]  = "SUBPROCESS",
-    [TOKEN_EVENTS]      = "EVENTS",
-    [TOKEN_TYPE]        = "TYPE",
-    [TOKEN_ID]          = "ID",
-    [TOKEN_STR]         = "STRING",
-    [TOKEN_ATR]         = "ASSIGNMENT",
-    [TOKEN_OPTAG]       = "OPEN TAG",
-    [TOKEN_CLTAG]       = "CLOSE TAG",
-    [TOKEN_SLASH]       = "SLASH",
-    [TOKEN_EOF]         = "EOF"
-};
+    [TOKEN_PROCESS] = "PROCESS", [TOKEN_SUBPROCESS] = "SUBPROCESS",
+    [TOKEN_EVENTS] = "EVENTS",   [TOKEN_TYPE] = "TYPE",
+    [TOKEN_ID] = "ID",           [TOKEN_STR] = "STRING",
+    [TOKEN_ATR] = "ASSIGNMENT",  [TOKEN_OPTAG] = "OPEN TAG",
+    [TOKEN_CLTAG] = "CLOSE TAG", [TOKEN_SLASH] = "SLASH",
+    [TOKEN_EOF] = "EOF"};
 
-_Static_assert(ARRAY_SIZE(TOKEN_DESC) == __TOKENS_COUNT, "Make sure that you have implemented description for new tokens!");
+_Static_assert(
+    ARRAY_SIZE(TOKEN_DESC) == __TOKENS_COUNT,
+    "Make sure that you have implemented description for new tokens!");
 
 typedef struct {
     char value[MAX_TOKEN_LEN];
@@ -224,13 +220,15 @@ typedef struct {
 Keyword_Table keyword_table = {0};
 
 Keyword_Node *get_keyword(Keyword_Table *table, char *key, size_t key_len) {
-    if (key_len == table->head->key_len && memcmp(table->head->key, key, key_len) == 0) {
+    if (key_len == table->head->key_len &&
+        memcmp(table->head->key, key, key_len) == 0) {
         return table->head;
     }
 
     table->current = table->head;
     while (table->current->next != NULL) {
-        if (key_len == table->current->next->key_len && memcmp(table->current->next->key, key, key_len) == 0) {
+        if (key_len == table->current->next->key_len &&
+            memcmp(table->current->next->key, key, key_len) == 0) {
             Keyword_Node *new_head = table->current->next;
             table->current->next = table->current->next->next;
             new_head->next = table->head;
@@ -258,23 +256,18 @@ void set_keyword(Keyword_Table *table, Keyword_Node *keyword) {
     table->current->next = keyword;
 }
 
-#define NEW_KEYWORD(_key, token_kind) \
-{ \
-    .key = (_key), \
-    .key_len = ARRAY_SIZE((_key)) - 1, \
-    .token = { \
-        .kind = (token_kind), \
-        .value = (_key) \
-    } \
-}
+#define NEW_KEYWORD(_key, token_kind)                                \
+    {                                                                \
+        .key = (_key), .key_len = ARRAY_SIZE((_key)) - 1, .token = { \
+            .kind = (token_kind),                                    \
+            .value = (_key)                                          \
+        }                                                            \
+    }
 
 Keyword_Node keywords[] = {
-    NEW_KEYWORD("process", TOKEN_PROCESS),
-    NEW_KEYWORD("events", TOKEN_EVENTS),
-    NEW_KEYWORD("task", TOKEN_TYPE),
-    NEW_KEYWORD("starter", TOKEN_TYPE),
-    NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)
-};
+    NEW_KEYWORD("process", TOKEN_PROCESS), NEW_KEYWORD("events", TOKEN_EVENTS),
+    NEW_KEYWORD("task", TOKEN_TYPE), NEW_KEYWORD("starter", TOKEN_TYPE),
+    NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)};
 
 void build_keyword_table() {
     for (size_t i = 0; i < ARRAY_SIZE(keywords); i++) {
@@ -287,8 +280,12 @@ void build_keyword_table() {
 | TODO: Write somehting about the implementation of the lexer       |
 \*******************************************************************/
 
-#define PRINT_ERROR(lexer, msg) fprintf(stderr, "%s:%ld:%ld: error: "msg"\n", (lexer)->file_path, (lexer)->row, (lexer)->col);
-#define PRINT_ERROR_FMT(lexer, format, ...) fprintf(stderr, "%s:%ld:%ld: error: "format"\n", (lexer)->file_path, (lexer)->row, (lexer)->col, __VA_ARGS__);
+#define PRINT_ERROR(lexer, msg)                                         \
+    fprintf(stderr, "%s:%ld:%ld: error: " msg "\n", (lexer)->file_path, \
+            (lexer)->row, (lexer)->col);
+#define PRINT_ERROR_FMT(lexer, format, ...)                                \
+    fprintf(stderr, "%s:%ld:%ld: error: " format "\n", (lexer)->file_path, \
+            (lexer)->row, (lexer)->col, __VA_ARGS__);
 
 typedef struct {
     char *content;
@@ -322,9 +319,7 @@ char lex_getc(Lexer *lexer) {
     return c;
 }
 
-char lex_peekc(Lexer *lexer) {
-    return *lexer->content;
-}
+char lex_peekc(Lexer *lexer) { return *lexer->content; }
 
 char lex_trim_left(Lexer *lexer) {
     char c = lex_getc(lexer);
@@ -346,15 +341,24 @@ Token next_token(Lexer *lexer) {
     }
 
     switch (c) {
-        case '<': lexer->token.kind = TOKEN_OPTAG; break;
-        case '>': lexer->token.kind = TOKEN_CLTAG; break;
-        case '=': lexer->token.kind = TOKEN_ATR;   break;
-        case '/': lexer->token.kind = TOKEN_SLASH; break;
+        case '<':
+            lexer->token.kind = TOKEN_OPTAG;
+            break;
+        case '>':
+            lexer->token.kind = TOKEN_CLTAG;
+            break;
+        case '=':
+            lexer->token.kind = TOKEN_ATR;
+            break;
+        case '/':
+            lexer->token.kind = TOKEN_SLASH;
+            break;
 
         case '\'': {
             len = 0;
             c = lex_getc(lexer);
-            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' && c != '\'' && c != '\n') {
+            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' && c != '\'' &&
+                   c != '\n') {
                 lexer->token.value[len++] = c;
                 c = lex_getc(lexer);
             }
@@ -374,18 +378,16 @@ Token next_token(Lexer *lexer) {
             }
 
             char peek = lex_peekc(lexer);
-            while (
-                len < (MAX_TOKEN_LEN - 1) &&
-                c != '\0' &&
-                (isalnum(peek) || peek == '_')
-            ) {
+            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' &&
+                   (isalnum(peek) || peek == '_')) {
                 c = lex_getc(lexer);
                 lexer->token.value[len++] = c;
                 peek = lex_peekc(lexer);
             }
 
             lexer->token.value[len] = '\0';
-            Keyword_Node *keyword = get_keyword(&keyword_table, lexer->token.value, len);
+            Keyword_Node *keyword =
+                get_keyword(&keyword_table, lexer->token.value, len);
             if (keyword != NULL) {
                 lexer->token.kind = keyword->token.kind;
             } else {
@@ -409,7 +411,8 @@ void next_token_fail_if_eof(Lexer *lexer) {
 void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
     next_token(lexer);
     if (lexer->token.kind != expected) {
-        PRINT_ERROR_FMT(lexer, "Expected %s, found `%s`", TOKEN_DESC[expected], lexer->token.value);
+        PRINT_ERROR_FMT(lexer, "Expected %s, found `%s`", TOKEN_DESC[expected],
+                        lexer->token.value);
         exit(EXIT_FAILURE);
     }
 }
@@ -427,11 +430,14 @@ typedef struct {
     Rectangle rect;
     Symbol *value;
     int points_to;
-    bool ploted;
 } Screen_Object;
 
 #define MAX_SCREEN_OBJECTS 512
 #define HEADER_HEIGHT 30
+#define SUB_HEADER_WIDTH 30
+#define ROWS_PER_SUB 3
+#define SUB_HEIGHT 300
+#define SUB_WIDTH 1500
 
 typedef struct {
     Screen_Object screen_objects[MAX_SCREEN_OBJECTS];
@@ -444,39 +450,48 @@ typedef struct {
 } Screen;
 
 void init_screen(Screen *screen) {
-    screen->rows = 1;
     screen->cols = 10;
-    screen->height = screen->rows * 400;
-    screen->width = screen->cols * 150;
-    screen->objs_cnt = 0;
-    memcpy(screen->title, "Default Title", 14);
+    screen->height = (screen->rows / ROWS_PER_SUB) * SUB_HEIGHT;
+    screen->width = SUB_WIDTH;
 }
 
 size_t push_obj(Screen *screen, Screen_Object obj) {
-    ASSERT(screen->objs_cnt < MAX_SCREEN_OBJECTS && "TODO: maybe use a dynamic array?");
+    ASSERT(screen->objs_cnt < MAX_SCREEN_OBJECTS &&
+           "TODO: maybe use a dynamic array?");
     screen->screen_objects[screen->objs_cnt] = obj;
     return screen->objs_cnt++;
 }
 
 #define RECT_POS(rect) (Vector2) { .x = (rect).x, .y = (rect).y }
-Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_size) {
+#define OBJ_EVENT_PADDING 10
+
+Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center, int padding) {
     Vector2 units = { screen.width / screen.cols, screen.height / screen.rows };
-    return (Vector2) { .x = grid_pos.x * units.x, grid_pos.y * units.y + (screen.height/2 - obj_size/2) };
+    // TraceLog(LOG_INFO, "Units -> (%f, %f)", units.x, units.y);
+    // TraceLog(LOG_INFO, "W/H -> (%d, %d)", screen.width, screen.height);
+    // TraceLog(LOG_INFO, "C/R -> (%d, %d)", screen.cols, screen.rows);
+
+    Vector2 pos = (Vector2) {
+        .x = grid_pos.x * units.x + padding + SUB_HEADER_WIDTH,
+        .y = grid_pos.y*units.y + HEADER_HEIGHT
+    };
+
+    if (center) {
+        pos.y += units.y*0.5 - obj_height*0.5;
+    }
+
+    return pos;
 }
 
 void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
-    Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.width);
+    Vector2 world_from =
+        grid2world(screen, RECT_POS(from.rect), from.rect.height, true, OBJ_EVENT_PADDING);
 
-    Vector2 v2_from = {
-        .x = world_from.x + from.rect.width,
-        .y = world_from.y + from.rect.height/2
-    };
+    Vector2 v2_from = {.x = world_from.x + from.rect.width,
+                       .y = world_from.y + from.rect.height / 2};
 
-    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.width);
-    Vector2 v2_to = {
-        .x = world_to.x,
-        .y = world_to.y + to.rect.height/2
-    };
+    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, OBJ_EVENT_PADDING);
+    Vector2 v2_to = {.x = world_to.x, .y = world_to.y + to.rect.height / 2};
 
     DrawLineV(v2_from, v2_to, BLACK);
     Vector2 v2_point = v2_to;
@@ -484,9 +499,10 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     DrawCircleV(v2_point, 4, BLACK);
 }
 
-int measure_text_lines(Rectangle rect, const char **words, int word_count, int font_size) {
+int measure_text_lines(Rectangle rect, const char **words, int word_count,
+                       int font_size) {
     int space_left = rect.width;
-    Vector2 pos = { .x = rect.x, .y = rect.y };
+    Vector2 pos = {.x = rect.x, .y = rect.y};
     int total_lines = 1;
     for (int i = 0; i < word_count; i++) {
         int word_len = MeasureText(words[i], font_size) + font_size;
@@ -505,7 +521,8 @@ int measure_text_lines(Rectangle rect, const char **words, int word_count, int f
     return total_lines;
 }
 
-void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int margin) {
+void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size,
+                       int margin) {
     int word_count = 0;
     const char **words = TextSplit(text, ' ', &word_count);
     int space_left = rect.width;
@@ -516,12 +533,13 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
 
     rect.x += margin;
     rect.y += margin;
-    rect.width -= margin*2;
-    rect.height -= margin*2;
-    Vector2 pos = { .x = rect.x, .y = rect.y };
-    const float spacing = font_size/10.0;
+    rect.width -= margin * 2;
+    rect.height -= margin * 2;
+    Vector2 pos = {.x = rect.x, .y = rect.y};
+    const float spacing = font_size / 10.0;
     for (int i = 0; i < word_count; i++) {
-        int word_len = MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
+        int word_len =
+            MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
 
         if (word_len > space_left) {
             space_left = rect.width - word_len;
@@ -539,49 +557,65 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
 void draw_header(Screen screen) {
     DrawLine(0, HEADER_HEIGHT, screen.width, HEADER_HEIGHT, BLACK);
     const float font_size = screen.font_size * 1.5;
-    const float spacing = font_size/10.0;
-    Vector2 textMeasure = MeasureTextEx(screen.font, screen.title, font_size, spacing);
+    const float spacing = font_size / 10.0;
+    Vector2 textMeasure =
+        MeasureTextEx(screen.font, screen.title, font_size, spacing);
 
-    Vector2 pos = {
-        .x = screen.width/2 - textMeasure.x/2,
-        .y = HEADER_HEIGHT/2 - textMeasure.y/2
-    };
+    Vector2 pos = {.x = screen.width / 2 - textMeasure.x / 2,
+                   .y = HEADER_HEIGHT / 2 - textMeasure.y / 2};
 
-    DrawTextEx(screen.font, screen.title, pos, font_size, font_size/10, BLACK);
+    DrawTextEx(screen.font, screen.title, pos, font_size, font_size / 10,
+               BLACK);
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
-    Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.width);
-    Rectangle world_obj_rect = {
-        .x = world_obj_pos.x,
-        .y = world_obj_pos.y,
-        .width = obj.rect.width,
-        .height = obj.rect.height
-    };
+    // ASSERT(world_obj_rect.x < screen.width &&
+    //         world_obj_rect.y < screen.height + HEADER_HEIGHT &&
+    //         "Object out of bounds");
 
-    ASSERT(world_obj_rect.x < screen.cols*screen.width && world_obj_rect.y < screen.rows*screen.height && "Object out of bounds");
+    if (obj.value->kind == SYMB_EVENT) {
+        Vector2 world_obj_pos =
+            grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, OBJ_EVENT_PADDING);
 
-    if (obj.value->kind == EVENT) {
+        Rectangle world_obj_rect = {.x = world_obj_pos.x,
+                                    .y = world_obj_pos.y,
+                                    .width = obj.rect.width,
+                                    .height = obj.rect.height};
+
         switch (obj.value->as.event.kind) {
-
             case EVENT_STARTER: {
                 Vector2 pos = {world_obj_rect.x, world_obj_rect.y};
-                pos.x += world_obj_rect.width/2;
-                pos.y += world_obj_rect.height/2;
-                DrawCircleV(pos, world_obj_rect.width/2, GREEN);
+                pos.x += world_obj_rect.width / 2;
+                pos.y += world_obj_rect.height / 2;
+                DrawCircleV(pos, world_obj_rect.width / 2, GREEN);
+                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, 1, BLACK);
             } break;
 
             case EVENT_TASK: {
                 DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, 1, BLACK);
-                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
+                draw_fitting_text(world_obj_rect, screen.font,
+                                  obj.value->as.event.title, screen.font_size,
+                                  5);
             } break;
 
-            default: ASSERT(0 && "Unreachable statement");
+            default:
+                ASSERT(0 && "Unreachable statement");
         }
 
         if (obj.points_to > 0) {
             draw_arrow(screen, obj, screen.screen_objects[obj.points_to]);
         }
+
+    } else if (obj.value->kind == SYMB_SUBPROCESS) {
+        Vector2 world_obj_pos =
+            grid2world(screen, RECT_POS(obj.rect), obj.rect.height, false, 0);
+
+        Rectangle world_obj_rect = {.x = world_obj_pos.x,
+                                    .y = world_obj_pos.y,
+                                    .width = obj.rect.width,
+                                    .height = obj.rect.height};
+
+        DrawRectangleLinesEx(world_obj_rect, 1, GREEN);
     }
 }
 
@@ -591,6 +625,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
 \*******************************************************************/
 void parse(Lexer *lexer, Screen *screen);
 void parse_process(Lexer *lexer, Screen *screen);
+void parse_subprocess(Lexer *lexer, Screen *screen);
 void parse_events(Lexer *lexer, Screen *screen, char *namespace);
 void track_arrows(Lexer *lexer, Screen *screen);
 
@@ -606,46 +641,7 @@ void parse(Lexer *lexer, Screen *screen) {
             break;
         }
 
-        if (lexer->token.kind != TOKEN_SUBPROCESS) {
-            PRINT_ERROR(lexer, "Expected new subprocess or end of process");
-            exit(EXIT_FAILURE);
-        }
-
-        bool id_finded = false;
-        char subprocess_name[MAX_TOKEN_LEN] = {0};
-        for (;;) {
-            next_token_fail_if_eof(lexer);
-            if (lexer->token.kind == TOKEN_CLTAG) break;
-            if (lexer->token.kind != TOKEN_ID) {
-                PRINT_ERROR(lexer, "Syntax error");
-                exit(EXIT_FAILURE);
-            }
-
-            if (strncmp(lexer->token.value, "id", 3) == 0) {
-                assert_next_token(lexer, TOKEN_ATR);
-                assert_next_token(lexer, TOKEN_STR);
-                memcpy(subprocess_name, lexer->token.value, MAX_TOKEN_LEN);
-                id_finded = true;
-            } else if (strncmp(lexer->token.value, "name", 5) == 0) {
-                assert_next_token(lexer, TOKEN_ATR);
-                assert_next_token(lexer, TOKEN_STR);
-                /* TODO: criar o objeto que separará os subprocessos */
-            } else {
-                PRINT_ERROR_FMT(lexer, "Unexpected attribute name %s for subprocess", lexer->token.value);
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        if (!id_finded) {
-            PRINT_ERROR(lexer, "Subprocess must have an `id`");
-            exit(EXIT_FAILURE);
-        }
-
-        parse_events(lexer, screen, subprocess_name);
-        assert_next_token(lexer, TOKEN_OPTAG);
-        assert_next_token(lexer, TOKEN_SLASH);
-        assert_next_token(lexer, TOKEN_SUBPROCESS);
-        assert_next_token(lexer, TOKEN_CLTAG);
+        parse_subprocess(lexer, screen);
     }
 
     track_arrows(lexer, screen);
@@ -654,13 +650,15 @@ void parse(Lexer *lexer, Screen *screen) {
 void parse_process(Lexer *lexer, Screen *screen) {
     next_token(lexer);
     if (lexer->token.kind != TOKEN_OPTAG) {
-        PRINT_ERROR_FMT(lexer, "Expected new tag, find `%s`", lexer->token.value);
+        PRINT_ERROR_FMT(lexer, "Expected new tag, find `%s`",
+                        lexer->token.value);
         exit(EXIT_FAILURE);
     }
 
     next_token_fail_if_eof(lexer);
     if (lexer->token.kind != TOKEN_PROCESS) {
-        PRINT_ERROR_FMT(lexer, "Expected tag process, find `%s`", lexer->token.value);
+        PRINT_ERROR_FMT(lexer, "Expected tag process, find `%s`",
+                        lexer->token.value);
         exit(EXIT_FAILURE);
     }
 
@@ -672,7 +670,8 @@ void parse_process(Lexer *lexer, Screen *screen) {
 
     const char *token_value = lexer->token.value;
     if (strncmp(token_value, "name", 5) != 0) {
-        PRINT_ERROR_FMT(lexer, "Invalid attribute `%s` for tag process", lexer->token.value);
+        PRINT_ERROR_FMT(lexer, "Invalid attribute `%s` for tag process",
+                        lexer->token.value);
         exit(EXIT_SUCCESS);
     }
 
@@ -681,6 +680,73 @@ void parse_process(Lexer *lexer, Screen *screen) {
     memcpy(screen->title, lexer->token.value, MAX_TOKEN_LEN);
 
     assert_next_token(lexer, TOKEN_CLTAG);
+}
+
+void parse_subprocess(Lexer *lexer, Screen *screen) {
+    if (lexer->token.kind != TOKEN_SUBPROCESS) {
+        PRINT_ERROR(lexer, "Expected new subprocess or end of process");
+        exit(EXIT_FAILURE);
+    }
+
+    bool id_finded = false;
+    char subprocess_namespace[MAX_TOKEN_LEN] = {0};
+    char subprocess_name[MAX_TOKEN_LEN] = {0};
+    for (;;) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind == TOKEN_CLTAG) break;
+        if (lexer->token.kind != TOKEN_ID) {
+            PRINT_ERROR(lexer, "Syntax error");
+            exit(EXIT_FAILURE);
+        }
+
+        if (strncmp(lexer->token.value, "id", 3) == 0) {
+            assert_next_token(lexer, TOKEN_ATR);
+            assert_next_token(lexer, TOKEN_STR);
+            memcpy(subprocess_namespace, lexer->token.value, MAX_TOKEN_LEN);
+            id_finded = true;
+        } else if (strncmp(lexer->token.value, "name", 5) == 0) {
+            assert_next_token(lexer, TOKEN_ATR);
+            assert_next_token(lexer, TOKEN_STR);
+            memcpy(subprocess_name, lexer->token.value, MAX_TOKEN_LEN);
+        } else {
+            PRINT_ERROR_FMT(lexer,
+                            "Unexpected attribute name %s for subprocess",
+                            lexer->token.value);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if (!id_finded) {
+        PRINT_ERROR(lexer, "Subprocess must have an `id`");
+        exit(EXIT_FAILURE);
+    }
+
+    Symbol symbol = {.kind = SYMB_SUBPROCESS};
+    hm_put(&lexer->symbols, subprocess_namespace, symbol);
+    Key_Value *entry = hm_get(&lexer->symbols, subprocess_namespace);
+    assert(entry != NULL);
+
+    parse_events(lexer, screen, subprocess_namespace);
+
+    Screen_Object subprocess_obj = {.value = &entry->value,
+                                    .rect = {.width = SUB_WIDTH, .height = SUB_HEIGHT, .x = 0, .y = screen->rows}};
+
+    screen->rows += ROWS_PER_SUB;
+
+    entry->value.obj_id = push_obj(screen, subprocess_obj);
+    memcpy(entry->value.as.subprocess.name, subprocess_name, MAX_TOKEN_LEN);
+
+    assert_next_token(lexer, TOKEN_OPTAG);
+    assert_next_token(lexer, TOKEN_SLASH);
+    assert_next_token(lexer, TOKEN_SUBPROCESS);
+    assert_next_token(lexer, TOKEN_CLTAG);
+}
+
+Event_Kind translate_event(const char *event) {
+    if (strcmp(event, "starter") == 0) return EVENT_STARTER;
+    if (strcmp(event, "task") == 0) return EVENT_TASK;
+
+    return EVENT_INVALID;
 }
 
 void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
@@ -693,21 +759,14 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
         assert_next_token(lexer, TOKEN_OPTAG);
         next_token_fail_if_eof(lexer);
         if (lexer->token.kind == TOKEN_TYPE) {
-            Event_Kind event_kind;
-            if (strcmp(lexer->token.value, "starter") == 0) {
-                event_kind = EVENT_STARTER;
-            } else if (strcmp(lexer->token.value, "task") == 0) {
-                event_kind = EVENT_TASK;
-            } else {
+            Event_Kind event_kind = translate_event(lexer->token.value);
+            if (event_kind == EVENT_INVALID) {
                 PRINT_ERROR(lexer, "Invalid event type");
                 exit(EXIT_FAILURE);
             }
 
             Symbol symbol = {
-                .obj_id = -1,
-                .as.event.kind = event_kind,
-                .kind = EVENT
-            };
+                .obj_id = -1, .as.event.kind = event_kind, .kind = SYMB_EVENT};
 
             char buffer[MAX_TOKEN_LEN];
             Key_Value *kv = NULL;
@@ -734,16 +793,23 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
                     id_founded = true;
                 } else if (id_founded && kv != NULL) {
                     if (strncmp(buffer, "name", 5) == 0) {
-                        memcpy(kv->value.as.event.title, lexer->token.value, MAX_TOKEN_LEN);
+                        memcpy(kv->value.as.event.title, lexer->token.value,
+                               MAX_TOKEN_LEN);
                     } else if (strncmp(buffer, "points", 7) == 0) {
                         symb_name(buffer, namespace, lexer->token.value);
-                        memcpy(kv->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
+                        memcpy(kv->value.as.event.points_to, buffer,
+                               MAX_TOKEN_LEN);
                     } else {
-                        PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`", buffer);
+                        PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",
+                                        buffer);
                         exit(EXIT_FAILURE);
                     }
                 } else {
-                    PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
+                    PRINT_ERROR_FMT(
+                        lexer,
+                        "Invalid event attribute `%s`. Event `id` has to be "
+                        "the first attribute",
+                        buffer);
                     exit(EXIT_FAILURE);
                 }
             }
@@ -754,13 +820,13 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
             }
 
             Screen_Object obj = {
-                .rect = { .height = 100, .width = 100, .x = col++, .y = 0 },
+                .rect = {.height = 60, .width = 80, .x = col++, .y = screen->rows + 1},
                 .value = &kv->value
             };
 
             if (event_kind == EVENT_STARTER) {
-                obj.rect.height *= 0.5;
-                obj.rect.width *= 0.5;
+                obj.rect.height = 40;
+                obj.rect.width = 40;
             }
 
             kv->value.obj_id = push_obj(screen, obj);
@@ -771,7 +837,10 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
                 break;
             }
 
-            PRINT_ERROR_FMT(lexer, "Unexpected closing tag %s. Perhaps you want to close `events`?", lexer->token.value);
+            PRINT_ERROR_FMT(lexer,
+                            "Unexpected closing tag %s. Perhaps you want to "
+                            "close `events`?",
+                            lexer->token.value);
             exit(EXIT_FAILURE);
         } else {
             PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
@@ -783,14 +852,17 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
 void track_arrows(Lexer *lexer, Screen *screen) {
     for (size_t i = 0; i < HASHMAP_CAPACITY; i++) {
         if (lexer->symbols.entries[i].occupied &&
-            lexer->symbols.entries[i].value.kind == EVENT &&
+            lexer->symbols.entries[i].value.kind == SYMB_EVENT &&
             lexer->symbols.entries[i].value.obj_id >= 0 &&
-            lexer->symbols.entries[i].value.as.event.points_to[0] != '\0'
-        ) {
-            Screen_Object *from = &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
-            Key_Value *to = hm_get(&lexer->symbols, lexer->symbols.entries[i].value.as.event.points_to);
+            lexer->symbols.entries[i].value.as.event.points_to[0] != '\0') {
+            Screen_Object *from =
+                &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
+            Key_Value *to =
+                hm_get(&lexer->symbols,
+                       lexer->symbols.entries[i].value.as.event.points_to);
 
-            if (to != NULL && to->occupied && to->value.obj_id >= 0 && to->value.obj_id != lexer->symbols.entries[i].value.obj_id) {
+            if (to != NULL && to->occupied && to->value.obj_id >= 0 &&
+                to->value.obj_id != lexer->symbols.entries[i].value.obj_id) {
                 from->points_to = to->value.obj_id;
             }
         }
@@ -812,17 +884,16 @@ int main(int argc, char **argv) {
 
     // next_token(&lexer);
     // while (lexer.token.kind != TOKEN_EOF) {
-    //     printf("(`%s`, %s)\n", lexer.token.value, TOKEN_DESC[lexer.token.kind]);
-    //     next_token(&lexer);
+    //     printf("(`%s`, %s)\n", lexer.token.value,
+    //     TOKEN_DESC[lexer.token.kind]); next_token(&lexer);
     // }
 
+    parse(&lexer, &screen);
     init_screen(&screen);
 
-    parse(&lexer, &screen);
-
-    InitWindow(screen.width, screen.height, screen.title);
+    InitWindow(screen.width, screen.height + HEADER_HEIGHT, screen.title);
     screen.font = LoadFont("./resources/Cascadia.ttf");
-    screen.font_size = 15;
+    screen.font_size = 11;
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
@@ -830,6 +901,8 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < screen.objs_cnt; i++) {
             draw_obj(screen, screen.screen_objects[i]);
         }
+
+        DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.width, (screen.height/2) + HEADER_HEIGHT, RED);
 
         EndDrawing();
     }

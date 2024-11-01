@@ -1,9 +1,17 @@
 <process name='Simple Process'>
-    <subprocess id='tal' name='Tal'>
+
+    <subprocess id='primeiro' name='Tal'>
         <events>
             <starter id='start' points='event1'/>
             <task id='event1' name='Encomendar Pizza' points='event2'/>
             <task id='event2' name='Opa Gangan stile'/>
         </events>
     </subprocess>
+
+    <subprocess id='segundo' name='Opa'>
+        <events>
+            <starter id='start2' points='primeiro.event1'/>
+        </events>
+    </subprocess>
+
 </process>
