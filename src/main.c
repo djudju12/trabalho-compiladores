@@ -477,6 +477,7 @@ size_t push_obj(Screen *screen, Screen_Object obj) {
 
 #define RECT_POS(rect) (Vector2) { .x = (rect).x, .y = (rect).y }
 #define OBJ_EVENT_PADDING 10
+#define LINE_THICKNESS 1.2
 
 Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center, int padding) {
     Vector2 units = { screen.width / screen.cols, screen.height / screen.rows };
@@ -503,7 +504,7 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, OBJ_EVENT_PADDING);
     Vector2 v2_to = {.x = world_to.x, .y = world_to.y + to.rect.height / 2};
 
-    DrawLineV(v2_from, v2_to, BLACK);
+    DrawLineEx(v2_from, v2_to, LINE_THICKNESS, BLACK);
     Vector2 v2_point = v2_to;
     v2_point.x -= 4;
     DrawCircleV(v2_point, 4, BLACK);
@@ -564,8 +565,9 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size,
     }
 }
 
+#define VECTOR(vx, vy) (Vector2) {.x=(vx), .y=(vy)}
 void draw_header(Screen screen) {
-    DrawLine(0, HEADER_HEIGHT, screen.width, HEADER_HEIGHT, BLACK);
+    DrawLineEx(VECTOR(0, HEADER_HEIGHT), VECTOR(screen.width, HEADER_HEIGHT), LINE_THICKNESS, BLACK);
     const float font_size = screen.font_size * 1.5;
     const float spacing = font_size / 10.0;
     Vector2 textMeasure =
@@ -598,7 +600,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
             } break;
 
             case EVENT_TASK: {
-                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, 1, BLACK);
+                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, LINE_THICKNESS, BLACK);
                 draw_fitting_text(world_obj_rect, screen.font,
                                   obj.value->as.event.title, screen.font_size,
                                   5);
@@ -616,12 +618,23 @@ void draw_obj(Screen screen, Screen_Object obj) {
         Vector2 world_obj_pos =
             grid2world(screen, RECT_POS(obj.rect), obj.rect.height, false, 0);
 
-        Rectangle world_obj_rect = {.x = world_obj_pos.x,
-                                    .y = world_obj_pos.y,
-                                    .width = obj.rect.width,
-                                    .height = obj.rect.height};
+        Rectangle entire_row = {
+            .x = world_obj_pos.x - SUB_HEADER_WIDTH,
+            .y = world_obj_pos.y,
+            .width = obj.rect.width - 1,
+            .height = obj.rect.height
+        };
 
-        DrawRectangleLinesEx(world_obj_rect, 1, GREEN);
+        Rectangle sub_header = {
+            .x = world_obj_pos.x - SUB_HEADER_WIDTH,
+            .y = world_obj_pos.y,
+            .width = SUB_HEADER_WIDTH,
+            .height = obj.rect.height
+        };
+
+
+        DrawRectangleLinesEx(entire_row, LINE_THICKNESS, BLACK);
+        DrawRectangleLinesEx(sub_header, LINE_THICKNESS, BLACK);
     }
 }
 
@@ -919,7 +932,7 @@ int main(int argc, char **argv) {
             draw_obj(screen, screen.screen_objects[i]);
         }
 
-        DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.width, (screen.height/2) + HEADER_HEIGHT, RED);
+        // DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.width, (screen.height/2) + HEADER_HEIGHT, RED);
 
         EndDrawing();
     }
