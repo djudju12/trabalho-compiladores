@@ -495,19 +495,40 @@ Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center,
 }
 
 void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
+    const int headSize = 6;
     Vector2 world_from =
         grid2world(screen, RECT_POS(from.rect), from.rect.height, true, OBJ_EVENT_PADDING);
 
-    Vector2 v2_from = {.x = world_from.x + from.rect.width,
-                       .y = world_from.y + from.rect.height / 2};
+    Vector2 start = {
+        .x = world_from.x + from.rect.width,
+        .y = world_from.y + from.rect.height / 2
+    };
 
     Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, OBJ_EVENT_PADDING);
-    Vector2 v2_to = {.x = world_to.x, .y = world_to.y + to.rect.height / 2};
+    Vector2 end = {
+        .x = world_to.x,
+        .y = world_to.y + to.rect.height / 2
+    };
 
-    DrawLineEx(v2_from, v2_to, LINE_THICKNESS, BLACK);
-    Vector2 v2_point = v2_to;
-    v2_point.x -= 4;
-    DrawCircleV(v2_point, 4, BLACK);
+    Vector2 direction = Vector2Subtract(end, start);
+    float totalLength = Vector2Length(direction);
+
+    if (totalLength > 0) {
+        direction = Vector2Scale(direction, 1.0f / totalLength);
+
+        Vector2 adjustedEnd = Vector2Add(start, Vector2Scale(direction, totalLength - headSize * 2));
+
+        Vector2 perpendicular = (Vector2){ -direction.y, direction.x };
+        Vector2 rightPoint = Vector2Add(adjustedEnd, Vector2Scale(perpendicular, -headSize));
+        Vector2 leftPoint = Vector2Add(adjustedEnd, Vector2Scale(perpendicular, headSize));
+        Vector2 arrowHeadBase = Vector2Add(adjustedEnd, Vector2Scale(direction, headSize * 2));
+
+        DrawLineEx(start, adjustedEnd, LINE_THICKNESS, BLACK);
+        DrawLineEx(adjustedEnd, leftPoint, LINE_THICKNESS, BLACK);
+        DrawLineEx(adjustedEnd, rightPoint, LINE_THICKNESS, BLACK);
+        DrawLineEx(leftPoint, arrowHeadBase, LINE_THICKNESS, BLACK);
+        DrawLineEx(rightPoint, arrowHeadBase, LINE_THICKNESS, BLACK);
+    }
 }
 
 int measure_text_lines(Rectangle rect, const char **words, int word_count,
