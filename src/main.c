@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <ctype.h>
-#include <raylib.h>
-#include <raymath.h>
+#include "raylib.h"
+#include "raymath.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,12 +95,25 @@ typedef struct {
     size_t len;
 } Hash_Map;
 
+bool contains(char *haystack, char needle, size_t limit) {
+    for (size_t i = 0; i < limit && haystack[i] != '\0'; i++) {
+        if (haystack[i] == needle) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void symb_name(char *dest, char *namespace, char *name) {
     size_t i = 0;
-    for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++)
-        dest[i] = namespace[i];
 
-    dest[i++] = '.';
+    if (!contains(name, '.', MAX_TOKEN_LEN))  {
+        for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++)
+            dest[i] = namespace[i];
+
+        dest[i++] = '.';
+    }
 
     for (size_t j = 0; i < MAX_TOKEN_LEN && name[j] != '\0'; i++, j++) {
         dest[i] = name[j];
@@ -467,9 +480,6 @@ size_t push_obj(Screen *screen, Screen_Object obj) {
 
 Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center, int padding) {
     Vector2 units = { screen.width / screen.cols, screen.height / screen.rows };
-    // TraceLog(LOG_INFO, "Units -> (%f, %f)", units.x, units.y);
-    // TraceLog(LOG_INFO, "W/H -> (%d, %d)", screen.width, screen.height);
-    // TraceLog(LOG_INFO, "C/R -> (%d, %d)", screen.cols, screen.rows);
 
     Vector2 pos = (Vector2) {
         .x = grid_pos.x * units.x + padding + SUB_HEADER_WIDTH,
@@ -569,10 +579,6 @@ void draw_header(Screen screen) {
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
-    // ASSERT(world_obj_rect.x < screen.width &&
-    //         world_obj_rect.y < screen.height + HEADER_HEIGHT &&
-    //         "Object out of bounds");
-
     if (obj.value->kind == SYMB_EVENT) {
         Vector2 world_obj_pos =
             grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, OBJ_EVENT_PADDING);
@@ -602,7 +608,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
                 ASSERT(0 && "Unreachable statement");
         }
 
-        if (obj.points_to > 0) {
+        if (obj.points_to >= 0) {
             draw_arrow(screen, obj, screen.screen_objects[obj.points_to]);
         }
 
@@ -721,15 +727,23 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
         exit(EXIT_FAILURE);
     }
 
-    Symbol symbol = {.kind = SYMB_SUBPROCESS};
+    Symbol symbol = {.kind = SYMB_SUBPROCESS, .obj_id = -1};
     hm_put(&lexer->symbols, subprocess_namespace, symbol);
     Key_Value *entry = hm_get(&lexer->symbols, subprocess_namespace);
     assert(entry != NULL);
 
     parse_events(lexer, screen, subprocess_namespace);
 
-    Screen_Object subprocess_obj = {.value = &entry->value,
-                                    .rect = {.width = SUB_WIDTH, .height = SUB_HEIGHT, .x = 0, .y = screen->rows}};
+    Screen_Object subprocess_obj = {
+        .value = &entry->value,
+        .rect = {
+            .width = SUB_WIDTH,
+            .height = SUB_HEIGHT,
+            .x = 0,
+            .y = screen->rows
+        },
+        .points_to = -1
+    };
 
     screen->rows += ROWS_PER_SUB;
 
@@ -766,7 +780,10 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
             }
 
             Symbol symbol = {
-                .obj_id = -1, .as.event.kind = event_kind, .kind = SYMB_EVENT};
+                .obj_id = -1,
+                .as.event.kind = event_kind,
+                .kind = SYMB_EVENT
+            };
 
             char buffer[MAX_TOKEN_LEN];
             Key_Value *kv = NULL;
@@ -786,6 +803,7 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
                 memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
                 assert_next_token(lexer, TOKEN_ATR);
                 assert_next_token(lexer, TOKEN_STR);
+
                 if (!id_founded && strncmp(buffer, "id", 3) == 0) {
                     symb_name(buffer, namespace, lexer->token.value);
                     hm_put(&lexer->symbols, buffer, symbol);
@@ -793,15 +811,12 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
                     id_founded = true;
                 } else if (id_founded && kv != NULL) {
                     if (strncmp(buffer, "name", 5) == 0) {
-                        memcpy(kv->value.as.event.title, lexer->token.value,
-                               MAX_TOKEN_LEN);
+                        memcpy(kv->value.as.event.title, lexer->token.value,MAX_TOKEN_LEN);
                     } else if (strncmp(buffer, "points", 7) == 0) {
                         symb_name(buffer, namespace, lexer->token.value);
-                        memcpy(kv->value.as.event.points_to, buffer,
-                               MAX_TOKEN_LEN);
+                        memcpy(kv->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
                     } else {
-                        PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",
-                                        buffer);
+                        PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
                         exit(EXIT_FAILURE);
                     }
                 } else {
@@ -821,7 +836,8 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
 
             Screen_Object obj = {
                 .rect = {.height = 60, .width = 80, .x = col++, .y = screen->rows + 1},
-                .value = &kv->value
+                .value = &kv->value,
+                .points_to = -1
             };
 
             if (event_kind == EVENT_STARTER) {
@@ -854,15 +870,16 @@ void track_arrows(Lexer *lexer, Screen *screen) {
         if (lexer->symbols.entries[i].occupied &&
             lexer->symbols.entries[i].value.kind == SYMB_EVENT &&
             lexer->symbols.entries[i].value.obj_id >= 0 &&
-            lexer->symbols.entries[i].value.as.event.points_to[0] != '\0') {
+            lexer->symbols.entries[i].value.as.event.points_to[0] != '\0')
+        {
             Screen_Object *from =
                 &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
+
             Key_Value *to =
                 hm_get(&lexer->symbols,
                        lexer->symbols.entries[i].value.as.event.points_to);
 
-            if (to != NULL && to->occupied && to->value.obj_id >= 0 &&
-                to->value.obj_id != lexer->symbols.entries[i].value.obj_id) {
+            if (to != NULL && to->occupied && to->value.obj_id >= 0) {
                 from->points_to = to->value.obj_id;
             }
         }
