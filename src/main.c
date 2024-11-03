@@ -526,16 +526,32 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     const int head_size = 6;
 
     Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.height, true, screen.settings.events_padding);
+    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
+
     Vector2 start = {
         .x = world_from.x + from.rect.width,
         .y = world_from.y + from.rect.height / 2
     };
 
-    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
-    Vector2 end = {
-        .x = world_to.x,
-        .y = world_to.y + to.rect.height / 2
-    };
+    Vector2 end = {0};
+    int diff_iy = from.rect.y - to.rect.y;
+    if (diff_iy == 0) {
+        end = (Vector2) {
+            .x = world_to.x,
+            .y = world_to.y + to.rect.height / 2
+        };
+    } else if (diff_iy > 0) {
+        end = (Vector2) {
+            .x = world_to.x + to.rect.width / 2,
+            .y = world_to.y + to.rect.height
+        };
+    } else {
+        end = (Vector2) {
+            .x = world_to.x + to.rect.width / 2,
+            .y = world_to.y
+        };
+    }
+
 
     Vector2 direction = Vector2Subtract(end, start);
     float total_length = Vector2Length(direction);
