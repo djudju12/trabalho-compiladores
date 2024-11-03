@@ -529,13 +529,14 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
 
     Vector2 start = {
-        .x = world_from.x + from.rect.width,
-        .y = world_from.y + from.rect.height / 2
+            .x = world_from.x + from.rect.width,
+            .y = world_from.y + from.rect.height / 2
     };
 
     Vector2 end = {0};
     int diff_iy = from.rect.y - to.rect.y;
     if (diff_iy == 0) {
+
         end = (Vector2) {
             .x = world_to.x,
             .y = world_to.y + to.rect.height / 2
@@ -545,11 +546,28 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
             .x = world_to.x + to.rect.width / 2,
             .y = world_to.y + to.rect.height
         };
+
+        Vector2 new_start = {
+            .x = end.x,
+            .y = start.y
+        };
+
+        DrawLineEx(start, new_start, screen.settings.line_thickness, BLACK);
+        start = new_start;
     } else {
         end = (Vector2) {
             .x = world_to.x + to.rect.width / 2,
             .y = world_to.y
         };
+
+
+        Vector2 new_start = {
+            .x = end.x,
+            .y = start.y
+        };
+
+        DrawLineEx(start, new_start, screen.settings.line_thickness, BLACK);
+        start = new_start;
     }
 
 
