@@ -1,11 +1,12 @@
 #include <assert.h>
 #include <ctype.h>
-#include "raylib.h"
-#include "raymath.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "raylib.h"
+#include "raymath.h"
 
 #define ASSERT assert
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -66,8 +67,23 @@ CLEAN_UP:
 #define HASHMAP_CAPACITY 16384
 #define HASHMAP_INDEX(h) (h & (HASHMAP_CAPACITY - 1))
 
-typedef enum { EVENT_STARTER = 0, EVENT_TASK, EVENT_INVALID } Event_Kind;
-typedef enum { SYMB_EVENT = 0, SYMB_SUBPROCESS } Symb_Kind;
+typedef enum {
+    EVENT_STARTER = 0,
+    EVENT_TASK,
+    EVENT_GATEWAY,
+    EVENT_INVALID
+} Event_Kind;
+
+typedef enum {
+    SYMB_EVENT = 0,
+    SYMB_SUBPROCESS
+} Symb_Kind;
+
+typedef enum {
+    RECT_MID = 0,
+    RECT_UP,
+    RECT_DOWN
+} Rect_Sides;
 
 typedef struct {
     union {
@@ -75,7 +91,8 @@ typedef struct {
         struct Event_Symb {
             Event_Kind kind;
             char title[MAX_TOKEN_LEN];
-            char points_to[MAX_TOKEN_LEN];
+            size_t points_to_cnt;
+            char points_to[3][MAX_TOKEN_LEN];
         } event;
 
         struct Subprocess_Symb {
@@ -193,6 +210,7 @@ enum Token_Kind {
     TOKEN_ATR,
     TOKEN_EOF,
     TOKEN_TYPE,
+    TOKEN_COL,
     TOKEN_SLASH,
     __TOKENS_COUNT
 };
@@ -204,6 +222,7 @@ char *TOKEN_DESC[]  = {
     [TOKEN_TYPE]        = "TYPE",
     [TOKEN_ID]          = "ID",
     [TOKEN_STR]         = "STRING",
+    [TOKEN_COL]         = "COLUMN",
     [TOKEN_ATR]         = "ASSIGNMENT",
     [TOKEN_OPTAG]       = "OPEN TAG",
     [TOKEN_CLTAG]       = "CLOSE TAG",
@@ -289,7 +308,9 @@ void set_keyword(Keyword_Table *table, Keyword_Node *keyword) {
 static Keyword_Node keywords[] = {
     NEW_KEYWORD("process", TOKEN_PROCESS),
     NEW_KEYWORD("events", TOKEN_EVENTS),
+    NEW_KEYWORD("col", TOKEN_COL),
     NEW_KEYWORD("task", TOKEN_TYPE),
+    NEW_KEYWORD("gateway", TOKEN_TYPE),
     NEW_KEYWORD("starter", TOKEN_TYPE),
     NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)
 };
@@ -457,7 +478,6 @@ void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
 typedef struct {
     Rectangle rect;
     Symbol *value;
-    int points_to;
 } Screen_Object;
 
 #define MAX_SCREEN_OBJECTS 512
@@ -496,7 +516,7 @@ void init_screen(Screen *screen) {
 void setup_screen(Screen *screen) {
     screen->settings.height = (screen->rows / screen->settings.rows_per_sub) * screen->settings.sub_height;
     screen->settings.width = screen->settings.sub_width;
-    screen->font_size = 11;
+    screen->font_size = 12;
     screen->font_size_header = screen->font_size*1.5;
 }
 
@@ -525,9 +545,30 @@ Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center,
     return pos;
 }
 
-void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
+void draw_arrow_head(Screen screen, Vector2 start, Vector2 end) {
     const int head_size = 6;
+    Vector2 direction = Vector2Subtract(end, start);
+    float total_length = Vector2Length(direction);
 
+    if (total_length > 0) {
+        direction = Vector2Scale(direction, 1.0f / total_length);
+
+        Vector2 adjusted_end = Vector2Add(start, Vector2Scale(direction, total_length - head_size * 2));
+
+        Vector2 perpendicular = (Vector2){ -direction.y, direction.x };
+        Vector2 right_point = Vector2Add(adjusted_end, Vector2Scale(perpendicular, -head_size));
+        Vector2 left_point = Vector2Add(adjusted_end, Vector2Scale(perpendicular, head_size));
+        Vector2 arrow_head_base = Vector2Add(adjusted_end, Vector2Scale(direction, head_size * 2));
+
+        DrawLineEx(start, adjusted_end, screen.settings.line_thickness, BLACK);
+        DrawLineEx(adjusted_end, left_point, screen.settings.line_thickness, BLACK);
+        DrawLineEx(adjusted_end, right_point, screen.settings.line_thickness, BLACK);
+        DrawLineEx(left_point, arrow_head_base, screen.settings.line_thickness, BLACK);
+        DrawLineEx(right_point, arrow_head_base, screen.settings.line_thickness, BLACK);
+    }
+}
+
+void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.height, true, screen.settings.events_padding);
     Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
 
@@ -572,26 +613,7 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
         start = new_start;
     }
 
-
-    Vector2 direction = Vector2Subtract(end, start);
-    float total_length = Vector2Length(direction);
-
-    if (total_length > 0) {
-        direction = Vector2Scale(direction, 1.0f / total_length);
-
-        Vector2 adjusted_end = Vector2Add(start, Vector2Scale(direction, total_length - head_size * 2));
-
-        Vector2 perpendicular = (Vector2){ -direction.y, direction.x };
-        Vector2 right_point = Vector2Add(adjusted_end, Vector2Scale(perpendicular, -head_size));
-        Vector2 left_point = Vector2Add(adjusted_end, Vector2Scale(perpendicular, head_size));
-        Vector2 arrow_head_base = Vector2Add(adjusted_end, Vector2Scale(direction, head_size * 2));
-
-        DrawLineEx(start, adjusted_end, screen.settings.line_thickness, BLACK);
-        DrawLineEx(adjusted_end, left_point, screen.settings.line_thickness, BLACK);
-        DrawLineEx(adjusted_end, right_point, screen.settings.line_thickness, BLACK);
-        DrawLineEx(left_point, arrow_head_base, screen.settings.line_thickness, BLACK);
-        DrawLineEx(right_point, arrow_head_base, screen.settings.line_thickness, BLACK);
-    }
+    draw_arrow_head(screen, start, end);
 }
 
 int count_text_lines(Rectangle rect, const char **words, int word_count, int font_size) {
@@ -679,19 +701,19 @@ void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
     };
 
     const float spacing = screen.font_size_header / 10.0;
+    const float rotation = -90;
+
     Vector2 text_measure = MeasureTextEx(screen.font, subprocess_obj.value->as.subprocess.name, screen.font_size_header, spacing);
     Vector2 text_position = RECT_POS(sub_header);
     text_position.y += sub_header.height/2.0 + text_measure.y/2.0;
     text_position.x += sub_header.width/2.0 - text_measure.x/4.0;
-
-    float rotation = -90;
 
     DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
     DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
     DrawTextPro(screen.font, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.font_size_header, spacing, BLACK);
 }
 
-void draw_obj(Screen screen, Screen_Object obj) {
+void draw_obj(Screen screen, Screen_Object obj, Hash_Map *symbols) {
     if (obj.value->kind == SYMB_EVENT) {
         Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, screen.settings.events_padding);
 
@@ -719,8 +741,11 @@ void draw_obj(Screen screen, Screen_Object obj) {
             default: ASSERT(0 && "Unreachable statement");
         }
 
-        if (obj.points_to >= 0) {
-            draw_arrow(screen, obj, screen.screen_objects[obj.points_to]);
+        if (obj.value->as.event.points_to_cnt > 0) {
+            for (size_t i = 0; i < obj.value->as.event.points_to_cnt; i++) {
+                Key_Value *to = get_symbol(symbols, obj.value->as.event.points_to[i]);
+                draw_arrow(screen, obj, screen.screen_objects[to->value.obj_id]);
+            }
         }
 
     } else if (obj.value->kind == SYMB_SUBPROCESS) {
@@ -736,10 +761,14 @@ void parse(Lexer *lexer, Screen *screen);
 void parse_process(Lexer *lexer, Screen *screen);
 void parse_subprocess(Lexer *lexer, Screen *screen);
 void parse_events(Lexer *lexer, Screen *screen, char *namespace);
+void parse_columns(Lexer *lexer, Screen *screen, int col, char *namespace);
 void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace);
-void track_arrows(Lexer *lexer, Screen *screen);
+void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace);
+void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace);
+void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace);
 
 Event_Kind translate_event(const char *event);
+int translate_row(Lexer *lexer, const char *column);
 
 void parse(Lexer *lexer, Screen *screen) {
     parse_process(lexer, screen);
@@ -755,8 +784,6 @@ void parse(Lexer *lexer, Screen *screen) {
 
         parse_subprocess(lexer, screen);
     }
-
-    track_arrows(lexer, screen);
 }
 
 void parse_process(Lexer *lexer, Screen *screen) {
@@ -842,7 +869,6 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
             .x = 0,
             .y = screen->rows
         },
-        .points_to = -1
     };
 
     screen->rows += screen->settings.rows_per_sub;
@@ -878,10 +904,46 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
 
         if (lexer->token.kind == TOKEN_TYPE) {
             parse_event(lexer, screen, col++, namespace);
+        } else if (lexer->token.kind == TOKEN_COL) {
+            parse_columns(lexer, screen, col++, namespace);
         } else {
             PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
             FAIL;
         }
+    }
+}
+
+void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
+    assert_next_token(lexer, TOKEN_CLTAG);
+
+    int count = 0;
+    for (;;) {
+        if (count >= 3) {
+            PRINT_ERROR(lexer, "`col` tag can have at must 3 events");
+            FAIL;
+        }
+
+        assert_next_token(lexer, TOKEN_OPTAG);
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind == TOKEN_SLASH) {
+            next_token_fail_if_eof(lexer);
+            if (lexer->token.kind == TOKEN_COL) {
+                assert_next_token(lexer, TOKEN_CLTAG);
+                break;
+            }
+
+            PRINT_ERROR_FMT(lexer, "Unexpected closing tag %s. Perhaps you want to close `col`?", lexer->token.value);
+            FAIL;
+        }
+
+        if (lexer->token.kind == TOKEN_TYPE) {
+            parse_event(lexer, screen, cur_col, namespace);
+        } else {
+            PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
+            FAIL;
+        }
+
+        count++;
     }
 }
 
@@ -894,9 +956,86 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
         FAIL;
     }
 
+    switch (event_kind) {
+        case EVENT_TASK:    parse_event_task(lexer, screen, col, namespace);    break;
+        case EVENT_STARTER: parse_event_starter(lexer, screen, col, namespace); break;
+        case EVENT_GATEWAY: parse_event_gateway(lexer, screen, col, namespace); break;
+        default: ASSERT(0 && "Unreachable statement");
+    }
+}
+
+void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
     Symbol symbol = {
         .obj_id = -1,
-        .as.event.kind = event_kind,
+        .as.event.kind = EVENT_TASK,
+        .kind = SYMB_EVENT
+    };
+
+    char buffer[MAX_TOKEN_LEN];
+    Key_Value *kv = NULL;
+    bool id_founded = false;
+    int row_number = 1;
+    for (;;) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind == TOKEN_SLASH) {
+            assert_next_token(lexer, TOKEN_CLTAG);
+            break;
+        }
+
+        if (lexer->token.kind != TOKEN_ID) {
+            PRINT_ERROR(lexer, "Syntax error");
+            FAIL;
+        }
+
+        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
+        assert_next_token(lexer, TOKEN_ATR);
+        assert_next_token(lexer, TOKEN_STR);
+
+        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
+            symb_name(buffer, namespace, lexer->token.value);
+            kv = put_symbol(&lexer->symbols, buffer, symbol);
+            id_founded = true;
+        } else if (id_founded && kv != NULL) {
+            if (strncmp(buffer, "name", 5) == 0) {
+                memcpy(kv->value.as.event.title, lexer->token.value,MAX_TOKEN_LEN);
+            } else if (strncmp(buffer, "points", 7) == 0) {
+                symb_name(buffer, namespace, lexer->token.value);
+                memcpy(kv->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
+                kv->value.as.event.points_to_cnt = 1;
+            } else if (strncmp(buffer, "row", 4) == 0) {
+                row_number = translate_row(lexer, lexer->token.value);
+            } else {
+                PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
+                FAIL;
+            }
+        } else {
+            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
+            FAIL;
+        }
+    }
+
+    if (!id_founded) {
+        PRINT_ERROR(lexer, "Event need to have and `id`");
+        FAIL;
+    }
+
+    Screen_Object obj = {
+        .rect = {
+            .height = 60,
+            .width = 80,
+            .x = col,
+            .y = screen->rows + row_number
+        },
+        .value = &kv->value
+    };
+
+    kv->value.obj_id = push_obj(screen, obj);
+}
+
+void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace) {
+    Symbol symbol = {
+        .obj_id = -1,
+        .as.event.kind = EVENT_STARTER,
         .kind = SYMB_EVENT
     };
 
@@ -924,11 +1063,10 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
             kv = put_symbol(&lexer->symbols, buffer, symbol);
             id_founded = true;
         } else if (id_founded && kv != NULL) {
-            if (strncmp(buffer, "name", 5) == 0) {
-                memcpy(kv->value.as.event.title, lexer->token.value,MAX_TOKEN_LEN);
-            } else if (strncmp(buffer, "points", 7) == 0) {
+            if (strncmp(buffer, "points", 7) == 0) {
                 symb_name(buffer, namespace, lexer->token.value);
-                memcpy(kv->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
+                memcpy(kv->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
+                kv->value.as.event.points_to_cnt = 1;
             } else {
                 PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
                 FAIL;
@@ -946,19 +1084,84 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
 
     Screen_Object obj = {
         .rect = {
-            .height = 60,
-            .width = 80,
+            .height = 40,
+            .width = 40,
             .x = col,
             .y = screen->rows + 1
         },
-        .value = &kv->value,
-        .points_to = -1
+        .value = &kv->value
     };
 
-    if (event_kind == EVENT_STARTER) {
-        obj.rect.height = 40;
-        obj.rect.width = 40;
+    kv->value.obj_id = push_obj(screen, obj);
+}
+
+void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace) {
+    ASSERT(0 && "TODO: not implemented");
+    Symbol symbol = {
+        .obj_id = -1,
+        .as.event.kind = EVENT_GATEWAY,
+        .kind = SYMB_EVENT
+    };
+
+    char buffer[MAX_TOKEN_LEN];
+    Key_Value *kv = NULL;
+    bool id_founded = false;
+    for (;;) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind == TOKEN_SLASH) {
+            assert_next_token(lexer, TOKEN_CLTAG);
+            break;
+        }
+
+        if (lexer->token.kind != TOKEN_ID) {
+            PRINT_ERROR(lexer, "Syntax error");
+            FAIL;
+        }
+
+        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
+        assert_next_token(lexer, TOKEN_ATR);
+        assert_next_token(lexer, TOKEN_STR);
+
+        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
+            symb_name(buffer, namespace, lexer->token.value);
+            kv = put_symbol(&lexer->symbols, buffer, symbol);
+            id_founded = true;
+        } else if (id_founded && kv != NULL) {
+            size_t buffer_to_cp;
+            if (strncmp(buffer, "up", 3) == 0) {
+                buffer_to_cp = RECT_UP;
+            } else if (strncmp(buffer, "mid", 4) == 0) {
+                buffer_to_cp = RECT_MID;
+            } else if (strncmp(buffer, "down", 5) == 0) {
+                buffer_to_cp = RECT_DOWN;
+            } else {
+                PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
+                FAIL;
+            }
+
+            symb_name(buffer, namespace, lexer->token.value);
+            memcpy(kv->value.as.event.points_to[buffer_to_cp], buffer, MAX_TOKEN_LEN);
+            kv->value.as.event.points_to_cnt += kv->value.as.event.points_to_cnt >= 3 ? 0 : 1;
+        } else {
+            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
+            FAIL;
+        }
     }
+
+    if (!id_founded) {
+        PRINT_ERROR(lexer, "Event need to have and `id`");
+        FAIL;
+    }
+
+    Screen_Object obj = {
+        .rect = {
+            .height = 40,
+            .width = 40,
+            .x = col,
+            .y = screen->rows + 1
+        },
+        .value = &kv->value
+    };
 
     kv->value.obj_id = push_obj(screen, obj);
 }
@@ -975,22 +1178,17 @@ Event_Kind translate_event(const char *event) {
     return EVENT_INVALID;
 }
 
-void track_arrows(Lexer *lexer, Screen *screen) {
-    for (size_t i = 0; i < HASHMAP_CAPACITY; i++) {
-        if (lexer->symbols.entries[i].occupied &&
-            lexer->symbols.entries[i].value.kind == SYMB_EVENT &&
-            lexer->symbols.entries[i].value.obj_id >= 0 &&
-            lexer->symbols.entries[i].value.as.event.points_to[0] != '\0')
-        {
-            Screen_Object *from = &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
-
-            Key_Value *to = get_symbol(&lexer->symbols, lexer->symbols.entries[i].value.as.event.points_to);
-
-            if (to != NULL && to->occupied && to->value.obj_id >= 0) {
-                from->points_to = to->value.obj_id;
-            }
-        }
+int translate_row(Lexer *lexer, const char *row) {
+    if (strncmp(row, "up", 3) == 0) {
+        return 0;
+    } else if (strncmp(row, "mid", 4) == 0) {
+        return 1;
+    } else if (strncmp(row, "down", 5) == 0) {
+        return 2;
     }
+
+    PRINT_ERROR_FMT(lexer, "Invalid row name `%s`. Expected values: up, mid, down", row);
+    FAIL;
 }
 
 int main(int argc, char **argv) {
@@ -1023,7 +1221,7 @@ int main(int argc, char **argv) {
         ClearBackground(WHITE);
         draw_header(screen);
         for (size_t i = 0; i < screen.objs_cnt; i++) {
-            draw_obj(screen, screen.screen_objects[i]);
+            draw_obj(screen, screen.screen_objects[i], &lexer.symbols);
         }
 
         // DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.settings.width, (screen.height/2) + HEADER_HEIGHT, RED);
