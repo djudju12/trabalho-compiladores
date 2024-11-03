@@ -9,6 +9,7 @@
 
 #define ASSERT assert
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+#define FAIL exit(EXIT_FAILURE)
 
 char *shift_args(int *argc, char ***argv) {
     ASSERT(*argc > 0 && "Shifting empty command line arguments!");
@@ -40,6 +41,7 @@ char *read_file(const char *file_path) {
         goto CLEAN_UP;
     }
 
+    fclose(file);
     return content;
 
 CLEAN_UP:
@@ -65,12 +67,11 @@ CLEAN_UP:
 #define HASHMAP_INDEX(h) (h & (HASHMAP_CAPACITY - 1))
 
 typedef enum { EVENT_STARTER = 0, EVENT_TASK, EVENT_INVALID } Event_Kind;
-
 typedef enum { SYMB_EVENT = 0, SYMB_SUBPROCESS } Symb_Kind;
 
 typedef struct {
-    Symb_Kind kind;
     union {
+
         struct Event_Symb {
             Event_Kind kind;
             char title[MAX_TOKEN_LEN];
@@ -80,7 +81,10 @@ typedef struct {
         struct Subprocess_Symb {
             char name[MAX_TOKEN_LEN];
         } subprocess;
+
     } as;
+
+    Symb_Kind kind;
     int obj_id;
 } Symbol;
 
@@ -95,7 +99,7 @@ typedef struct {
     size_t len;
 } Hash_Map;
 
-bool contains(char *haystack, char needle, size_t limit) {
+bool str_contains(char *haystack, char needle, size_t limit) {
     for (size_t i = 0; i < limit && haystack[i] != '\0'; i++) {
         if (haystack[i] == needle) {
             return true;
@@ -105,12 +109,14 @@ bool contains(char *haystack, char needle, size_t limit) {
     return false;
 }
 
+// appends namespace to symbol if not already contains it
 void symb_name(char *dest, char *namespace, char *name) {
     size_t i = 0;
 
-    if (!contains(name, '.', MAX_TOKEN_LEN))  {
-        for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++)
+    if (!str_contains(name, '.', MAX_TOKEN_LEN))  {
+        for (; i < MAX_TOKEN_LEN && namespace[i] != '\0'; i++) {
             dest[i] = namespace[i];
+        }
 
         dest[i++] = '.';
     }
@@ -136,7 +142,7 @@ size_t hash(char *key, size_t *key_len) {
     return h;
 }
 
-Key_Value *hm_get(Hash_Map *map, char *key) {
+Key_Value *get_symbol(Hash_Map *map, char *key) {
     size_t key_len = 0;
     size_t h = hash(key, &key_len);
 
@@ -149,7 +155,7 @@ Key_Value *hm_get(Hash_Map *map, char *key) {
     return entry->occupied ? entry : NULL;
 }
 
-void hm_put(Hash_Map *map, char *key, Symbol symbol) {
+Key_Value* put_symbol(Hash_Map *map, char *key, Symbol symbol) {
     size_t key_len = 0;
     size_t h = hash(key, &key_len);
     Key_Value *entry = &map->entries[HASHMAP_INDEX(h)];
@@ -165,11 +171,11 @@ void hm_put(Hash_Map *map, char *key, Symbol symbol) {
         map->len++;
         memcpy(entry->key, key, key_len);
         entry->occupied = true;
-        entry->value = symbol;
         entry->value.obj_id = -1;
-    } else {
-        // TODO: update symbol. Will be needed soon
     }
+
+    entry->value = symbol;
+    return entry;
 }
 
 /*******************************************************************\
@@ -191,17 +197,24 @@ enum Token_Kind {
     __TOKENS_COUNT
 };
 
-char *TOKEN_DESC[] = {
-    [TOKEN_PROCESS] = "PROCESS", [TOKEN_SUBPROCESS] = "SUBPROCESS",
-    [TOKEN_EVENTS] = "EVENTS",   [TOKEN_TYPE] = "TYPE",
-    [TOKEN_ID] = "ID",           [TOKEN_STR] = "STRING",
-    [TOKEN_ATR] = "ASSIGNMENT",  [TOKEN_OPTAG] = "OPEN TAG",
-    [TOKEN_CLTAG] = "CLOSE TAG", [TOKEN_SLASH] = "SLASH",
-    [TOKEN_EOF] = "EOF"};
+char *TOKEN_DESC[]  = {
+    [TOKEN_PROCESS]     = "PROCESS",
+    [TOKEN_SUBPROCESS]  = "SUBPROCESS",
+    [TOKEN_EVENTS]      = "EVENTS",
+    [TOKEN_TYPE]        = "TYPE",
+    [TOKEN_ID]          = "ID",
+    [TOKEN_STR]         = "STRING",
+    [TOKEN_ATR]         = "ASSIGNMENT",
+    [TOKEN_OPTAG]       = "OPEN TAG",
+    [TOKEN_CLTAG]       = "CLOSE TAG",
+    [TOKEN_SLASH]       = "SLASH",
+    [TOKEN_EOF]         = "EOF"
+};
 
 _Static_assert(
     ARRAY_SIZE(TOKEN_DESC) == __TOKENS_COUNT,
-    "Make sure that you have implemented description for new tokens!");
+    "Make sure that you have implemented description for new tokens!"
+);
 
 typedef struct {
     char value[MAX_TOKEN_LEN];
@@ -230,18 +243,14 @@ typedef struct {
     Keyword_Node *current;
 } Keyword_Table;
 
-Keyword_Table keyword_table = {0};
-
 Keyword_Node *get_keyword(Keyword_Table *table, char *key, size_t key_len) {
-    if (key_len == table->head->key_len &&
-        memcmp(table->head->key, key, key_len) == 0) {
+    if (key_len == table->head->key_len && memcmp(table->head->key, key, key_len) == 0) {
         return table->head;
     }
 
     table->current = table->head;
     while (table->current->next != NULL) {
-        if (key_len == table->current->next->key_len &&
-            memcmp(table->current->next->key, key, key_len) == 0) {
+        if (key_len == table->current->next->key_len && memcmp(table->current->next->key, key, key_len) == 0) {
             Keyword_Node *new_head = table->current->next;
             table->current->next = table->current->next->next;
             new_head->next = table->head;
@@ -277,14 +286,17 @@ void set_keyword(Keyword_Table *table, Keyword_Node *keyword) {
         }                                                            \
     }
 
-Keyword_Node keywords[] = {
-    NEW_KEYWORD("process", TOKEN_PROCESS), NEW_KEYWORD("events", TOKEN_EVENTS),
-    NEW_KEYWORD("task", TOKEN_TYPE), NEW_KEYWORD("starter", TOKEN_TYPE),
-    NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)};
+static Keyword_Node keywords[] = {
+    NEW_KEYWORD("process", TOKEN_PROCESS),
+    NEW_KEYWORD("events", TOKEN_EVENTS),
+    NEW_KEYWORD("task", TOKEN_TYPE),
+    NEW_KEYWORD("starter", TOKEN_TYPE),
+    NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)
+};
 
-void build_keyword_table() {
+void build_keyword_table(Keyword_Table *keyword_table) {
     for (size_t i = 0; i < ARRAY_SIZE(keywords); i++) {
-        set_keyword(&keyword_table, &keywords[i]);
+        set_keyword(keyword_table, &keywords[i]);
     }
 }
 
@@ -296,6 +308,7 @@ void build_keyword_table() {
 #define PRINT_ERROR(lexer, msg)                                         \
     fprintf(stderr, "%s:%ld:%ld: error: " msg "\n", (lexer)->file_path, \
             (lexer)->row, (lexer)->col);
+
 #define PRINT_ERROR_FMT(lexer, format, ...)                                \
     fprintf(stderr, "%s:%ld:%ld: error: " format "\n", (lexer)->file_path, \
             (lexer)->row, (lexer)->col, __VA_ARGS__);
@@ -305,6 +318,7 @@ typedef struct {
     size_t col, row;
     const char *file_path;
     Hash_Map symbols;
+    Keyword_Table keyword_table;
     Token token;
 } Lexer;
 
@@ -314,12 +328,14 @@ void init_lexer(Lexer *lexer, const char *file_path) {
     lexer->file_path = file_path;
     lexer->content = read_file(file_path);
     lexer->symbols.len = 0;
-    build_keyword_table();
+    build_keyword_table(&lexer->keyword_table);
 }
 
 char lex_getc(Lexer *lexer) {
     char c = *lexer->content;
-    if (c == '\0') return '\0';
+    if (c == '\0') {
+        return '\0';
+    }
 
     if (c == '\n') {
         lexer->col = 1;
@@ -370,15 +386,14 @@ Token next_token(Lexer *lexer) {
         case '\'': {
             len = 0;
             c = lex_getc(lexer);
-            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' && c != '\'' &&
-                   c != '\n') {
+            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' && c != '\'' && c != '\n') {
                 lexer->token.value[len++] = c;
                 c = lex_getc(lexer);
             }
 
             if (c != '\'') {
                 PRINT_ERROR(lexer, "Unexpected end of string literal");
-                exit(EXIT_FAILURE);
+                FAIL;
             }
 
             lexer->token.kind = TOKEN_STR;
@@ -387,20 +402,18 @@ Token next_token(Lexer *lexer) {
         default: {
             if (!isalpha(c)) {
                 PRINT_ERROR_FMT(lexer, "Invalid character `%c`", c);
-                exit(EXIT_FAILURE);
+                FAIL;
             }
 
             char peek = lex_peekc(lexer);
-            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' &&
-                   (isalnum(peek) || peek == '_')) {
+            while (len < (MAX_TOKEN_LEN - 1) && c != '\0' && (isalnum(peek) || peek == '_')) {
                 c = lex_getc(lexer);
                 lexer->token.value[len++] = c;
                 peek = lex_peekc(lexer);
             }
 
             lexer->token.value[len] = '\0';
-            Keyword_Node *keyword =
-                get_keyword(&keyword_table, lexer->token.value, len);
+            Keyword_Node *keyword = get_keyword(&lexer->keyword_table, lexer->token.value, len);
             if (keyword != NULL) {
                 lexer->token.kind = keyword->token.kind;
             } else {
@@ -417,16 +430,15 @@ void next_token_fail_if_eof(Lexer *lexer) {
     next_token(lexer);
     if (lexer->token.kind == TOKEN_EOF) {
         PRINT_ERROR(lexer, "Unexpected end of file");
-        exit(EXIT_FAILURE);
+        FAIL;
     }
 }
 
 void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
     next_token(lexer);
     if (lexer->token.kind != expected) {
-        PRINT_ERROR_FMT(lexer, "Expected %s, found `%s`", TOKEN_DESC[expected],
-                        lexer->token.value);
-        exit(EXIT_FAILURE);
+        PRINT_ERROR_FMT(lexer, "Expected %s, found `%s`", TOKEN_DESC[expected], lexer->token.value);
+        FAIL;
     }
 }
 
@@ -439,6 +451,9 @@ void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
 | https://github.com/raysan5/raylib/                                |
 \*******************************************************************/
 
+#define RECT_POS(rect) (Vector2) { .x = (rect).x, .y = (rect).y }
+#define VECTOR(vx, vy) (Vector2) { .x = (vx), .y = (vy)}
+
 typedef struct {
     Rectangle rect;
     Symbol *value;
@@ -446,45 +461,58 @@ typedef struct {
 } Screen_Object;
 
 #define MAX_SCREEN_OBJECTS 512
-#define HEADER_HEIGHT 30
-#define SUB_HEADER_WIDTH 30
-#define ROWS_PER_SUB 3
-#define SUB_HEIGHT 300
-#define SUB_WIDTH 1500
-
 typedef struct {
     Screen_Object screen_objects[MAX_SCREEN_OBJECTS];
+    size_t objs_cnt;
     Font font;
     int font_size;
-    size_t objs_cnt;
     char title[MAX_TOKEN_LEN];
-    int height, width;
     int cols, rows;
+
+    struct {
+        float line_thickness;
+        int height, width;
+        int header_height;
+        int sub_header_width;
+        int rows_per_sub;
+        int sub_height;
+        int sub_width;
+        int events_padding;
+    } settings;
 } Screen;
 
 void init_screen(Screen *screen) {
     screen->cols = 10;
-    screen->height = (screen->rows / ROWS_PER_SUB) * SUB_HEIGHT;
-    screen->width = SUB_WIDTH;
+    screen->settings.header_height = 30;
+    screen->settings.sub_header_width = 30;
+    screen->settings.rows_per_sub = 3;
+    screen->settings.sub_height = 300;
+    screen->settings.sub_width = 150 * screen->cols;
+    screen->settings.line_thickness = 1.2f;
+    screen->settings.events_padding = 10;
+}
+
+void setup_screen(Screen *screen) {
+    screen->settings.height = (screen->rows / screen->settings.rows_per_sub) * screen->settings.sub_height;
+    screen->settings.width = screen->settings.sub_width;
 }
 
 size_t push_obj(Screen *screen, Screen_Object obj) {
-    ASSERT(screen->objs_cnt < MAX_SCREEN_OBJECTS &&
-           "TODO: maybe use a dynamic array?");
+    ASSERT(screen->objs_cnt < MAX_SCREEN_OBJECTS && "out of space");
     screen->screen_objects[screen->objs_cnt] = obj;
     return screen->objs_cnt++;
 }
 
-#define RECT_POS(rect) (Vector2) { .x = (rect).x, .y = (rect).y }
-#define OBJ_EVENT_PADDING 10
-#define LINE_THICKNESS 1.2
 
 Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center, int padding) {
-    Vector2 units = { screen.width / screen.cols, screen.height / screen.rows };
+    Vector2 units = {
+        screen.settings.width / screen.cols,
+        screen.settings.height / screen.rows
+    };
 
     Vector2 pos = (Vector2) {
-        .x = grid_pos.x * units.x + padding + SUB_HEADER_WIDTH,
-        .y = grid_pos.y*units.y + HEADER_HEIGHT
+        .x = grid_pos.x*units.x + padding + screen.settings.sub_header_width,
+        .y = grid_pos.y*units.y + screen.settings.header_height
     };
 
     if (center) {
@@ -495,44 +523,42 @@ Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center,
 }
 
 void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
-    const int headSize = 6;
-    Vector2 world_from =
-        grid2world(screen, RECT_POS(from.rect), from.rect.height, true, OBJ_EVENT_PADDING);
+    const int head_size = 6;
 
+    Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.height, true, screen.settings.events_padding);
     Vector2 start = {
         .x = world_from.x + from.rect.width,
         .y = world_from.y + from.rect.height / 2
     };
 
-    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, OBJ_EVENT_PADDING);
+    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
     Vector2 end = {
         .x = world_to.x,
         .y = world_to.y + to.rect.height / 2
     };
 
     Vector2 direction = Vector2Subtract(end, start);
-    float totalLength = Vector2Length(direction);
+    float total_length = Vector2Length(direction);
 
-    if (totalLength > 0) {
-        direction = Vector2Scale(direction, 1.0f / totalLength);
+    if (total_length > 0) {
+        direction = Vector2Scale(direction, 1.0f / total_length);
 
-        Vector2 adjustedEnd = Vector2Add(start, Vector2Scale(direction, totalLength - headSize * 2));
+        Vector2 adjusted_end = Vector2Add(start, Vector2Scale(direction, total_length - head_size * 2));
 
         Vector2 perpendicular = (Vector2){ -direction.y, direction.x };
-        Vector2 rightPoint = Vector2Add(adjustedEnd, Vector2Scale(perpendicular, -headSize));
-        Vector2 leftPoint = Vector2Add(adjustedEnd, Vector2Scale(perpendicular, headSize));
-        Vector2 arrowHeadBase = Vector2Add(adjustedEnd, Vector2Scale(direction, headSize * 2));
+        Vector2 right_point = Vector2Add(adjusted_end, Vector2Scale(perpendicular, -head_size));
+        Vector2 left_point = Vector2Add(adjusted_end, Vector2Scale(perpendicular, head_size));
+        Vector2 arrow_head_base = Vector2Add(adjusted_end, Vector2Scale(direction, head_size * 2));
 
-        DrawLineEx(start, adjustedEnd, LINE_THICKNESS, BLACK);
-        DrawLineEx(adjustedEnd, leftPoint, LINE_THICKNESS, BLACK);
-        DrawLineEx(adjustedEnd, rightPoint, LINE_THICKNESS, BLACK);
-        DrawLineEx(leftPoint, arrowHeadBase, LINE_THICKNESS, BLACK);
-        DrawLineEx(rightPoint, arrowHeadBase, LINE_THICKNESS, BLACK);
+        DrawLineEx(start, adjusted_end, screen.settings.line_thickness, BLACK);
+        DrawLineEx(adjusted_end, left_point, screen.settings.line_thickness, BLACK);
+        DrawLineEx(adjusted_end, right_point, screen.settings.line_thickness, BLACK);
+        DrawLineEx(left_point, arrow_head_base, screen.settings.line_thickness, BLACK);
+        DrawLineEx(right_point, arrow_head_base, screen.settings.line_thickness, BLACK);
     }
 }
 
-int measure_text_lines(Rectangle rect, const char **words, int word_count,
-                       int font_size) {
+int count_text_lines(Rectangle rect, const char **words, int word_count, int font_size) {
     int space_left = rect.width;
     Vector2 pos = {.x = rect.x, .y = rect.y};
     int total_lines = 1;
@@ -553,12 +579,11 @@ int measure_text_lines(Rectangle rect, const char **words, int word_count,
     return total_lines;
 }
 
-void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size,
-                       int margin) {
+void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int margin) {
     int word_count = 0;
     const char **words = TextSplit(text, ' ', &word_count);
-    int space_left = rect.width;
-    int total_lines = measure_text_lines(rect, words, word_count, font_size);
+
+    int total_lines = count_text_lines(rect, words, word_count, font_size);
     if ((total_lines * font_size) > rect.height) {
         font_size = rect.height / total_lines;
     }
@@ -568,10 +593,11 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size,
     rect.width -= margin * 2;
     rect.height -= margin * 2;
     Vector2 pos = {.x = rect.x, .y = rect.y};
+
     const float spacing = font_size / 10.0;
+    int space_left = rect.width;
     for (int i = 0; i < word_count; i++) {
-        int word_len =
-            MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
+        int word_len = MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
 
         if (word_len > space_left) {
             space_left = rect.width - word_len;
@@ -586,30 +612,30 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size,
     }
 }
 
-#define VECTOR(vx, vy) (Vector2) {.x=(vx), .y=(vy)}
 void draw_header(Screen screen) {
-    DrawLineEx(VECTOR(0, HEADER_HEIGHT), VECTOR(screen.width, HEADER_HEIGHT), LINE_THICKNESS, BLACK);
     const float font_size = screen.font_size * 1.5;
     const float spacing = font_size / 10.0;
-    Vector2 textMeasure =
-        MeasureTextEx(screen.font, screen.title, font_size, spacing);
+    Vector2 textMeasure = MeasureTextEx(screen.font, screen.title, font_size, spacing);
 
-    Vector2 pos = {.x = screen.width / 2 - textMeasure.x / 2,
-                   .y = HEADER_HEIGHT / 2 - textMeasure.y / 2};
+    Vector2 pos = {
+        .x = screen.settings.width / 2 - textMeasure.x / 2,
+        .y = screen.settings.header_height / 2 - textMeasure.y / 2
+    };
 
-    DrawTextEx(screen.font, screen.title, pos, font_size, font_size / 10,
-               BLACK);
+    DrawLineEx(VECTOR(0, screen.settings.header_height), VECTOR(screen.settings.width, screen.settings.header_height), screen.settings.line_thickness, BLACK);
+    DrawTextEx(screen.font, screen.title, pos, font_size, font_size / 10, BLACK);
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
     if (obj.value->kind == SYMB_EVENT) {
-        Vector2 world_obj_pos =
-            grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, OBJ_EVENT_PADDING);
+        Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, screen.settings.events_padding);
 
-        Rectangle world_obj_rect = {.x = world_obj_pos.x,
-                                    .y = world_obj_pos.y,
-                                    .width = obj.rect.width,
-                                    .height = obj.rect.height};
+        Rectangle world_obj_rect = {
+            .x = world_obj_pos.x,
+            .y = world_obj_pos.y,
+            .width = obj.rect.width,
+            .height = obj.rect.height
+        };
 
         switch (obj.value->as.event.kind) {
             case EVENT_STARTER: {
@@ -617,18 +643,15 @@ void draw_obj(Screen screen, Screen_Object obj) {
                 pos.x += world_obj_rect.width / 2;
                 pos.y += world_obj_rect.height / 2;
                 DrawCircleV(pos, world_obj_rect.width / 2, GREEN);
-                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, 1, BLACK);
+                // DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, 1, BLACK); // debug
             } break;
 
             case EVENT_TASK: {
-                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, LINE_THICKNESS, BLACK);
-                draw_fitting_text(world_obj_rect, screen.font,
-                                  obj.value->as.event.title, screen.font_size,
-                                  5);
+                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, screen.settings.line_thickness, BLACK);
+                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
             } break;
 
-            default:
-                ASSERT(0 && "Unreachable statement");
+            default: ASSERT(0 && "Unreachable statement");
         }
 
         if (obj.points_to >= 0) {
@@ -636,26 +659,24 @@ void draw_obj(Screen screen, Screen_Object obj) {
         }
 
     } else if (obj.value->kind == SYMB_SUBPROCESS) {
-        Vector2 world_obj_pos =
-            grid2world(screen, RECT_POS(obj.rect), obj.rect.height, false, 0);
+        Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.height, false, 0);
 
         Rectangle entire_row = {
-            .x = world_obj_pos.x - SUB_HEADER_WIDTH,
+            .x = world_obj_pos.x - screen.settings.sub_header_width,
             .y = world_obj_pos.y,
             .width = obj.rect.width - 1,
             .height = obj.rect.height
         };
 
         Rectangle sub_header = {
-            .x = world_obj_pos.x - SUB_HEADER_WIDTH,
+            .x = world_obj_pos.x - screen.settings.sub_header_width,
             .y = world_obj_pos.y,
-            .width = SUB_HEADER_WIDTH,
+            .width = screen.settings.sub_header_width,
             .height = obj.rect.height
         };
 
-
-        DrawRectangleLinesEx(entire_row, LINE_THICKNESS, BLACK);
-        DrawRectangleLinesEx(sub_header, LINE_THICKNESS, BLACK);
+        DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
+        DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
     }
 }
 
@@ -667,7 +688,10 @@ void parse(Lexer *lexer, Screen *screen);
 void parse_process(Lexer *lexer, Screen *screen);
 void parse_subprocess(Lexer *lexer, Screen *screen);
 void parse_events(Lexer *lexer, Screen *screen, char *namespace);
+void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace);
 void track_arrows(Lexer *lexer, Screen *screen);
+
+Event_Kind translate_event(const char *event);
 
 void parse(Lexer *lexer, Screen *screen) {
     parse_process(lexer, screen);
@@ -690,29 +714,26 @@ void parse(Lexer *lexer, Screen *screen) {
 void parse_process(Lexer *lexer, Screen *screen) {
     next_token(lexer);
     if (lexer->token.kind != TOKEN_OPTAG) {
-        PRINT_ERROR_FMT(lexer, "Expected new tag, find `%s`",
-                        lexer->token.value);
-        exit(EXIT_FAILURE);
+        PRINT_ERROR_FMT(lexer, "Expected new tag, find `%s`", lexer->token.value);
+        FAIL;
     }
 
     next_token_fail_if_eof(lexer);
     if (lexer->token.kind != TOKEN_PROCESS) {
-        PRINT_ERROR_FMT(lexer, "Expected tag process, find `%s`",
-                        lexer->token.value);
-        exit(EXIT_FAILURE);
+        PRINT_ERROR_FMT(lexer, "Expected tag process, find `%s`", lexer->token.value);
+        FAIL;
     }
 
     next_token_fail_if_eof(lexer);
     if (lexer->token.kind != TOKEN_ID) {
         PRINT_ERROR(lexer, "Process need to have an `name` attribute");
-        exit(EXIT_FAILURE);
+        FAIL;
     }
 
     const char *token_value = lexer->token.value;
     if (strncmp(token_value, "name", 5) != 0) {
-        PRINT_ERROR_FMT(lexer, "Invalid attribute `%s` for tag process",
-                        lexer->token.value);
-        exit(EXIT_SUCCESS);
+        PRINT_ERROR_FMT(lexer, "Invalid attribute `%s` for tag process", lexer->token.value);
+        FAIL;
     }
 
     assert_next_token(lexer, TOKEN_ATR);
@@ -725,10 +746,10 @@ void parse_process(Lexer *lexer, Screen *screen) {
 void parse_subprocess(Lexer *lexer, Screen *screen) {
     if (lexer->token.kind != TOKEN_SUBPROCESS) {
         PRINT_ERROR(lexer, "Expected new subprocess or end of process");
-        exit(EXIT_FAILURE);
+        FAIL;
     }
 
-    bool id_finded = false;
+    bool id_found = false;
     char subprocess_namespace[MAX_TOKEN_LEN] = {0};
     char subprocess_name[MAX_TOKEN_LEN] = {0};
     for (;;) {
@@ -736,34 +757,31 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
         if (lexer->token.kind == TOKEN_CLTAG) break;
         if (lexer->token.kind != TOKEN_ID) {
             PRINT_ERROR(lexer, "Syntax error");
-            exit(EXIT_FAILURE);
+            FAIL;
         }
 
         if (strncmp(lexer->token.value, "id", 3) == 0) {
             assert_next_token(lexer, TOKEN_ATR);
             assert_next_token(lexer, TOKEN_STR);
             memcpy(subprocess_namespace, lexer->token.value, MAX_TOKEN_LEN);
-            id_finded = true;
+            id_found = true;
         } else if (strncmp(lexer->token.value, "name", 5) == 0) {
             assert_next_token(lexer, TOKEN_ATR);
             assert_next_token(lexer, TOKEN_STR);
             memcpy(subprocess_name, lexer->token.value, MAX_TOKEN_LEN);
         } else {
-            PRINT_ERROR_FMT(lexer,
-                            "Unexpected attribute name %s for subprocess",
-                            lexer->token.value);
-            exit(EXIT_FAILURE);
+            PRINT_ERROR_FMT(lexer, "Unexpected attribute name %s for subprocess", lexer->token.value);
+            FAIL;
         }
     }
 
-    if (!id_finded) {
+    if (!id_found) {
         PRINT_ERROR(lexer, "Subprocess must have an `id`");
-        exit(EXIT_FAILURE);
+        FAIL;
     }
 
     Symbol symbol = {.kind = SYMB_SUBPROCESS, .obj_id = -1};
-    hm_put(&lexer->symbols, subprocess_namespace, symbol);
-    Key_Value *entry = hm_get(&lexer->symbols, subprocess_namespace);
+    Key_Value *entry = put_symbol(&lexer->symbols, subprocess_namespace, symbol);
     assert(entry != NULL);
 
     parse_events(lexer, screen, subprocess_namespace);
@@ -771,15 +789,15 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
     Screen_Object subprocess_obj = {
         .value = &entry->value,
         .rect = {
-            .width = SUB_WIDTH,
-            .height = SUB_HEIGHT,
+            .width = screen->settings.sub_width,
+            .height = screen->settings.sub_height,
             .x = 0,
             .y = screen->rows
         },
         .points_to = -1
     };
 
-    screen->rows += ROWS_PER_SUB;
+    screen->rows += screen->settings.rows_per_sub;
 
     entry->value.obj_id = push_obj(screen, subprocess_obj);
     memcpy(entry->value.as.subprocess.name, subprocess_name, MAX_TOKEN_LEN);
@@ -788,13 +806,6 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
     assert_next_token(lexer, TOKEN_SLASH);
     assert_next_token(lexer, TOKEN_SUBPROCESS);
     assert_next_token(lexer, TOKEN_CLTAG);
-}
-
-Event_Kind translate_event(const char *event) {
-    if (strcmp(event, "starter") == 0) return EVENT_STARTER;
-    if (strcmp(event, "task") == 0) return EVENT_TASK;
-
-    return EVENT_INVALID;
 }
 
 void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
@@ -806,97 +817,114 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
     for (;;) {
         assert_next_token(lexer, TOKEN_OPTAG);
         next_token_fail_if_eof(lexer);
-        if (lexer->token.kind == TOKEN_TYPE) {
-            Event_Kind event_kind = translate_event(lexer->token.value);
-            if (event_kind == EVENT_INVALID) {
-                PRINT_ERROR(lexer, "Invalid event type");
-                exit(EXIT_FAILURE);
-            }
-
-            Symbol symbol = {
-                .obj_id = -1,
-                .as.event.kind = event_kind,
-                .kind = SYMB_EVENT
-            };
-
-            char buffer[MAX_TOKEN_LEN];
-            Key_Value *kv = NULL;
-            bool id_founded = false;
-            for (;;) {
-                next_token_fail_if_eof(lexer);
-                if (lexer->token.kind == TOKEN_SLASH) {
-                    assert_next_token(lexer, TOKEN_CLTAG);
-                    break;
-                }
-
-                if (lexer->token.kind != TOKEN_ID) {
-                    PRINT_ERROR(lexer, "Syntax error");
-                    exit(EXIT_FAILURE);
-                }
-
-                memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
-                assert_next_token(lexer, TOKEN_ATR);
-                assert_next_token(lexer, TOKEN_STR);
-
-                if (!id_founded && strncmp(buffer, "id", 3) == 0) {
-                    symb_name(buffer, namespace, lexer->token.value);
-                    hm_put(&lexer->symbols, buffer, symbol);
-                    kv = hm_get(&lexer->symbols, buffer);
-                    id_founded = true;
-                } else if (id_founded && kv != NULL) {
-                    if (strncmp(buffer, "name", 5) == 0) {
-                        memcpy(kv->value.as.event.title, lexer->token.value,MAX_TOKEN_LEN);
-                    } else if (strncmp(buffer, "points", 7) == 0) {
-                        symb_name(buffer, namespace, lexer->token.value);
-                        memcpy(kv->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
-                    } else {
-                        PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
-                        exit(EXIT_FAILURE);
-                    }
-                } else {
-                    PRINT_ERROR_FMT(
-                        lexer,
-                        "Invalid event attribute `%s`. Event `id` has to be "
-                        "the first attribute",
-                        buffer);
-                    exit(EXIT_FAILURE);
-                }
-            }
-
-            if (!id_founded) {
-                PRINT_ERROR(lexer, "Event need to have and `id`");
-                exit(EXIT_FAILURE);
-            }
-
-            Screen_Object obj = {
-                .rect = {.height = 60, .width = 80, .x = col++, .y = screen->rows + 1},
-                .value = &kv->value,
-                .points_to = -1
-            };
-
-            if (event_kind == EVENT_STARTER) {
-                obj.rect.height = 40;
-                obj.rect.width = 40;
-            }
-
-            kv->value.obj_id = push_obj(screen, obj);
-        } else if (lexer->token.kind == TOKEN_SLASH) {
+        if (lexer->token.kind == TOKEN_SLASH) {
             next_token_fail_if_eof(lexer);
             if (lexer->token.kind == TOKEN_EVENTS) {
                 assert_next_token(lexer, TOKEN_CLTAG);
                 break;
             }
 
-            PRINT_ERROR_FMT(lexer,
-                            "Unexpected closing tag %s. Perhaps you want to "
-                            "close `events`?",
-                            lexer->token.value);
-            exit(EXIT_FAILURE);
+            PRINT_ERROR_FMT(lexer, "Unexpected closing tag %s. Perhaps you want to close `events`?", lexer->token.value);
+            FAIL;
+        }
+
+        if (lexer->token.kind == TOKEN_TYPE) {
+            parse_event(lexer, screen, col++, namespace);
         } else {
             PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
-            exit(EXIT_FAILURE);
+            FAIL;
         }
     }
+}
+
+void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
+    ASSERT(lexer->token.kind == TOKEN_TYPE && "Invalid event token");
+
+    Event_Kind event_kind = translate_event(lexer->token.value);
+    if (event_kind == EVENT_INVALID) {
+        PRINT_ERROR(lexer, "Invalid event type");
+        FAIL;
+    }
+
+    Symbol symbol = {
+        .obj_id = -1,
+        .as.event.kind = event_kind,
+        .kind = SYMB_EVENT
+    };
+
+    char buffer[MAX_TOKEN_LEN];
+    Key_Value *kv = NULL;
+    bool id_founded = false;
+    for (;;) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind == TOKEN_SLASH) {
+            assert_next_token(lexer, TOKEN_CLTAG);
+            break;
+        }
+
+        if (lexer->token.kind != TOKEN_ID) {
+            PRINT_ERROR(lexer, "Syntax error");
+            FAIL;
+        }
+
+        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
+        assert_next_token(lexer, TOKEN_ATR);
+        assert_next_token(lexer, TOKEN_STR);
+
+        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
+            symb_name(buffer, namespace, lexer->token.value);
+            kv = put_symbol(&lexer->symbols, buffer, symbol);
+            id_founded = true;
+        } else if (id_founded && kv != NULL) {
+            if (strncmp(buffer, "name", 5) == 0) {
+                memcpy(kv->value.as.event.title, lexer->token.value,MAX_TOKEN_LEN);
+            } else if (strncmp(buffer, "points", 7) == 0) {
+                symb_name(buffer, namespace, lexer->token.value);
+                memcpy(kv->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
+            } else {
+                PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
+                FAIL;
+            }
+        } else {
+            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
+            FAIL;
+        }
+    }
+
+    if (!id_founded) {
+        PRINT_ERROR(lexer, "Event need to have and `id`");
+        FAIL;
+    }
+
+    Screen_Object obj = {
+        .rect = {
+            .height = 60,
+            .width = 80,
+            .x = col,
+            .y = screen->rows + 1
+        },
+        .value = &kv->value,
+        .points_to = -1
+    };
+
+    if (event_kind == EVENT_STARTER) {
+        obj.rect.height = 40;
+        obj.rect.width = 40;
+    }
+
+    kv->value.obj_id = push_obj(screen, obj);
+}
+
+Event_Kind translate_event(const char *event) {
+    if (strcmp(event, "starter") == 0) {
+        return EVENT_STARTER;
+    }
+
+    if (strcmp(event, "task") == 0) {
+        return EVENT_TASK;
+    }
+
+    return EVENT_INVALID;
 }
 
 void track_arrows(Lexer *lexer, Screen *screen) {
@@ -906,12 +934,9 @@ void track_arrows(Lexer *lexer, Screen *screen) {
             lexer->symbols.entries[i].value.obj_id >= 0 &&
             lexer->symbols.entries[i].value.as.event.points_to[0] != '\0')
         {
-            Screen_Object *from =
-                &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
+            Screen_Object *from = &screen->screen_objects[lexer->symbols.entries[i].value.obj_id];
 
-            Key_Value *to =
-                hm_get(&lexer->symbols,
-                       lexer->symbols.entries[i].value.as.event.points_to);
+            Key_Value *to = get_symbol(&lexer->symbols, lexer->symbols.entries[i].value.as.event.points_to);
 
             if (to != NULL && to->occupied && to->value.obj_id >= 0) {
                 from->points_to = to->value.obj_id;
@@ -932,6 +957,7 @@ int main(int argc, char **argv) {
     static Screen screen = {0};
 
     init_lexer(&lexer, file_path);
+    init_screen(&screen);
 
     // next_token(&lexer);
     // while (lexer.token.kind != TOKEN_EOF) {
@@ -940,9 +966,9 @@ int main(int argc, char **argv) {
     // }
 
     parse(&lexer, &screen);
-    init_screen(&screen);
+    setup_screen(&screen);
 
-    InitWindow(screen.width, screen.height + HEADER_HEIGHT, screen.title);
+    InitWindow(screen.settings.width, screen.settings.height + screen.settings.header_height, screen.title);
     screen.font = LoadFont("./resources/Cascadia.ttf");
     screen.font_size = 11;
     while (!WindowShouldClose()) {
@@ -953,7 +979,7 @@ int main(int argc, char **argv) {
             draw_obj(screen, screen.screen_objects[i]);
         }
 
-        // DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.width, (screen.height/2) + HEADER_HEIGHT, RED);
+        // DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.settings.width, (screen.height/2) + HEADER_HEIGHT, RED);
 
         EndDrawing();
     }
