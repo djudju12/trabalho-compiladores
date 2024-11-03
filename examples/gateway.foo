@@ -1,0 +1,20 @@
+<process name='Gateway Example'>
+
+    <subprocess id='gateway' name='Gateway Subprocess'>
+        <events>
+            <starter id='start' points='gateway'/>
+            <gateway id='gateway' up='task_1' mid='task_2' down='second_subprocess.task_3' />
+            <col>
+                <task id='task_1' row='up' name='Task 1'/>
+                <task id='task_2' row='mid' name='Task 2'/>
+            </col>
+        </events>
+    </subprocess>
+
+    <subprocess id='second_subprocess' name='Other Subprocess'>
+        <events>
+            <task id='task_3' row='up' name='Task 3'/>
+        </events>
+    </subprocess>
+
+</process>

@@ -621,25 +621,25 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     } else { // from abaixo
         if (diff_ix < 0) { // from atras
             three_lines = (Vector2) {
-                .y = world_from.y + from.rect.height/2.0,
-                .x = world_from.x + from.rect.width
+                .y = world_from.y,
+                .x = world_from.x + from.rect.width/2.0
             };
             uses_three_lines = true;
-            end.x = world_to.x + to.rect.width/2.0;
-            end.y = world_to.y + to.rect.height;
-            start.x = end.x;
-            start.y = three_lines.y;
+            end.x = world_to.x;
+            end.y = world_to.y + to.rect.height/2.0;
+            start.x = three_lines.x;
+            start.y = end.y;
             DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
         } else if (diff_ix > 0) { // from na frente
             three_lines = (Vector2) {
-                .y = world_from.y + from.rect.height/2.0,
-                .x = world_from.x
+                .y = world_from.y,
+                .x = world_from.x + from.rect.width/2.0
             };
             uses_three_lines = true;
-            end.x = world_to.x + to.rect.width/2.0;
-            end.y = world_to.y + to.rect.height;
-            start.x = end.x;
-            start.y = three_lines.y;
+            end.x = world_to.x + to.rect.width;
+            end.y = world_to.y + to.rect.height/2.0;
+            start.x = three_lines.x;
+            start.y = end.y;
             DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
         } else {
             start.x = end.x = world_from.x + from.rect.width/2.0;
@@ -648,7 +648,7 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
         }
     }
 
-    DrawCircleV(uses_three_lines ? three_lines : start, 5, BLACK);
+    DrawCircleV(uses_three_lines ? three_lines : start, 3, BLACK);
     draw_arrow_head(screen, start, end);
 }
 
@@ -770,9 +770,64 @@ void draw_obj(Screen screen, Screen_Object obj) {
             } break;
 
             case EVENT_TASK: {
-                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, screen.settings.line_thickness, BLACK);
                 DrawRectangleRounded(world_obj_rect, 0.3f, 0, WHITE);
+                DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, screen.settings.line_thickness, BLACK);
                 draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
+            } break;
+
+            case EVENT_GATEWAY: {
+                Vector2 top = {
+                    .x = world_obj_rect.x + world_obj_rect.width/2.0,
+                    .y = world_obj_rect.y
+                };
+
+                Vector2 bottom = {
+                    .x = world_obj_rect.x + world_obj_rect.width/2.0,
+                    .y = world_obj_rect.y + world_obj_rect.height
+                };
+
+                Vector2 left = {
+                    .x = world_obj_rect.x,
+                    .y = world_obj_rect.y + world_obj_rect.height/2.0
+                };
+
+                Vector2 right = {
+                    .x = world_obj_rect.x + world_obj_rect.width,
+                    .y = world_obj_rect.y + world_obj_rect.height/2.0
+                };
+
+                DrawLineEx(top, right, screen.settings.line_thickness, BLACK);
+                DrawLineEx(right, bottom, screen.settings.line_thickness, BLACK);
+                DrawLineEx(bottom, left, screen.settings.line_thickness, BLACK);
+                DrawLineEx(left, top, screen.settings.line_thickness, BLACK);
+
+                Vector2 center = {
+                    .x = world_obj_rect.x + world_obj_rect.width/2.0,
+                    .y = world_obj_rect.y + world_obj_rect.height/2.0
+                };
+
+                Vector2 x00 = {
+                    .x = center.x - 10,
+                    .y = center.y - 10
+                };
+
+                Vector2 x01 = {
+                    .x = center.x + 10,
+                    .y = center.y + 10
+                };
+
+                Vector2 x10 = {
+                    .x = center.x + 10,
+                    .y = center.y - 10
+                };
+
+                Vector2 x11 = {
+                    .x = center.x - 10,
+                    .y = center.y + 10
+                };
+
+                DrawLineEx(x00, x01, screen.settings.line_thickness, BLACK);
+                DrawLineEx(x10, x11, screen.settings.line_thickness, BLACK);
             } break;
 
             default: ASSERT(0 && "Unreachable statement");
@@ -948,11 +1003,6 @@ void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
 
     int count = 0;
     for (;;) {
-        if (count >= 3) {
-            PRINT_ERROR(lexer, "`col` tag can have at must 3 events");
-            FAIL;
-        }
-
         assert_next_token(lexer, TOKEN_OPTAG);
         next_token_fail_if_eof(lexer);
         if (lexer->token.kind == TOKEN_SLASH) {
@@ -965,6 +1015,12 @@ void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
             PRINT_ERROR_FMT(lexer, "Unexpected closing tag %s. Perhaps you want to close `col`?", lexer->token.value);
             FAIL;
         }
+
+        if (count >= 3) {
+            PRINT_ERROR(lexer, "`col` tag can have at must 3 events");
+            FAIL;
+        }
+
 
         if (lexer->token.kind == TOKEN_TYPE) {
             parse_event(lexer, screen, cur_col, namespace);
@@ -982,7 +1038,7 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
 
     Event_Kind event_kind = translate_event(lexer->token.value);
     if (event_kind == EVENT_INVALID) {
-        PRINT_ERROR(lexer, "Invalid event type");
+        PRINT_ERROR_FMT(lexer, "Invalid event type `%s`", lexer->token.value);
         FAIL;
     }
 
@@ -1125,12 +1181,10 @@ void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace)
 }
 
 void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace) {
-    ASSERT(0 && "TODO: not implemented");
-    Symbol symbol = {
-        .obj_id = -1,
-        .as.event.kind = EVENT_GATEWAY,
-        .kind = SYMB_EVENT
-    };
+    Symbol symbol = {0};
+    symbol.obj_id = -1;
+    symbol.as.event.kind = EVENT_GATEWAY;
+    symbol.kind = SYMB_EVENT;
 
     char buffer[MAX_TOKEN_LEN];
     Key_Value *kv = NULL;
@@ -1183,8 +1237,8 @@ void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace)
 
     Screen_Object obj = {
         .rect = {
-            .height = 40,
-            .width = 40,
+            .height = 60,
+            .width = 60,
             .x = col,
             .y = screen->rows + 1
         },
@@ -1201,6 +1255,10 @@ Event_Kind translate_event(const char *event) {
 
     if (strcmp(event, "task") == 0) {
         return EVENT_TASK;
+    }
+
+    if (strcmp(event, "gateway") == 0) {
+        return EVENT_GATEWAY;
     }
 
     return EVENT_INVALID;

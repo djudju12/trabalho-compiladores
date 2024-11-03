@@ -10,6 +10,9 @@ build: src/main.c bin/ build_raylib
 run: build
 	./bin/$(PROGRAM_NAME) ./examples/simples.foo
 
+run_gateway: build
+	./bin/$(PROGRAM_NAME) ./examples/gateway.foo
+
 bin/:
 	mkdir -p bin
 
