@@ -71,7 +71,8 @@ typedef enum {
     EVENT_STARTER = 0,
     EVENT_TASK,
     EVENT_GATEWAY,
-    EVENT_INVALID
+    EVENT_INVALID,
+    EVENT_END
 } Event_Kind;
 
 typedef enum {
@@ -310,6 +311,7 @@ static Keyword_Node keywords[] = {
     NEW_KEYWORD("col", TOKEN_COL),
     NEW_KEYWORD("task", TOKEN_TYPE),
     NEW_KEYWORD("gateway", TOKEN_TYPE),
+    NEW_KEYWORD("end", TOKEN_TYPE),
     NEW_KEYWORD("starter", TOKEN_TYPE),
     NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)
 };
@@ -776,6 +778,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
             } break;
 
             case EVENT_GATEWAY: {
+                // DrawRectanglePro(world_obj_rect, VECTOR(0, 0), 45.0f, BLACK); // TODO
                 Vector2 top = {
                     .x = world_obj_rect.x + world_obj_rect.width/2.0,
                     .y = world_obj_rect.y
@@ -830,6 +833,13 @@ void draw_obj(Screen screen, Screen_Object obj) {
                 DrawLineEx(x10, x11, screen.settings.line_thickness, BLACK);
             } break;
 
+            case EVENT_END: {
+                Vector2 pos = {world_obj_rect.x, world_obj_rect.y};
+                pos.x += world_obj_rect.width / 2;
+                pos.y += world_obj_rect.height / 2;
+                DrawCircleV(pos, world_obj_rect.width / 2, RED);
+            } break;
+
             default: ASSERT(0 && "Unreachable statement");
         }
 
@@ -851,6 +861,7 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace);
 void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace);
 void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace);
 void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace);
+void parse_event_end(Lexer *lexer, Screen *screen, int col, char *namespace);
 
 Event_Kind translate_event(const char *event);
 int translate_row(Lexer *lexer, const char *column);
@@ -1046,6 +1057,7 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
         case EVENT_TASK:    parse_event_task(lexer, screen, col, namespace);    break;
         case EVENT_STARTER: parse_event_starter(lexer, screen, col, namespace); break;
         case EVENT_GATEWAY: parse_event_gateway(lexer, screen, col, namespace); break;
+        case EVENT_END:     parse_event_end(lexer, screen, col, namespace);     break;
         default: ASSERT(0 && "Unreachable statement");
     }
 }
@@ -1248,6 +1260,60 @@ void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace)
     kv->value.obj_id = push_obj(screen, obj);
 }
 
+void parse_event_end(Lexer *lexer, Screen *screen, int col, char *namespace) {
+    Symbol symbol = {0};
+    symbol.obj_id = -1;
+    symbol.as.event.kind = EVENT_END;
+    symbol.kind = SYMB_EVENT;
+
+    char buffer[MAX_TOKEN_LEN];
+    Key_Value *kv = NULL;
+    bool id_founded = false;
+    for (;;) {
+        next_token_fail_if_eof(lexer);
+        if (lexer->token.kind == TOKEN_SLASH) {
+            assert_next_token(lexer, TOKEN_CLTAG);
+            break;
+        }
+
+        if (lexer->token.kind != TOKEN_ID) {
+            PRINT_ERROR(lexer, "Syntax error");
+            FAIL;
+        }
+
+        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
+        assert_next_token(lexer, TOKEN_ATR);
+        assert_next_token(lexer, TOKEN_STR);
+
+        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
+            symb_name(buffer, namespace, lexer->token.value);
+            kv = put_symbol(&lexer->symbols, buffer, symbol);
+            id_founded = true;
+        } else {
+            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`.", buffer);
+            FAIL;
+        }
+    }
+
+    if (!id_founded) {
+        PRINT_ERROR(lexer, "Event need to have and `id`");
+        FAIL;
+    }
+
+    Screen_Object obj = {
+        .rect = {
+            .height = 40,
+            .width = 40,
+            .x = col,
+            .y = screen->rows + 1
+        },
+        .value = &kv->value
+    };
+
+    kv->value.obj_id = push_obj(screen, obj);
+}
+
+
 Event_Kind translate_event(const char *event) {
     if (strcmp(event, "starter") == 0) {
         return EVENT_STARTER;
@@ -1259,6 +1325,10 @@ Event_Kind translate_event(const char *event) {
 
     if (strcmp(event, "gateway") == 0) {
         return EVENT_GATEWAY;
+    }
+
+    if (strcmp(event, "end") == 0) {
+        return EVENT_END;
     }
 
     return EVENT_INVALID;
