@@ -466,6 +466,7 @@ typedef struct {
     size_t objs_cnt;
     Font font;
     int font_size;
+    int font_size_header;
     char title[MAX_TOKEN_LEN];
     int cols, rows;
 
@@ -495,6 +496,8 @@ void init_screen(Screen *screen) {
 void setup_screen(Screen *screen) {
     screen->settings.height = (screen->rows / screen->settings.rows_per_sub) * screen->settings.sub_height;
     screen->settings.width = screen->settings.sub_width;
+    screen->font_size = 11;
+    screen->font_size_header = screen->font_size*1.5;
 }
 
 size_t push_obj(Screen *screen, Screen_Object obj) {
@@ -536,7 +539,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     Vector2 end = {0};
     int diff_iy = from.rect.y - to.rect.y;
     if (diff_iy == 0) {
-
         end = (Vector2) {
             .x = world_to.x,
             .y = world_to.y + to.rect.height / 2
@@ -647,17 +649,46 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
 }
 
 void draw_header(Screen screen) {
-    const float font_size = screen.font_size * 1.5;
-    const float spacing = font_size / 10.0;
-    Vector2 textMeasure = MeasureTextEx(screen.font, screen.title, font_size, spacing);
+    const float spacing = screen.font_size_header / 10.0;
+    Vector2 text_measure = MeasureTextEx(screen.font, screen.title, screen.font_size_header, spacing);
 
     Vector2 pos = {
-        .x = screen.settings.width / 2 - textMeasure.x / 2,
-        .y = screen.settings.header_height / 2 - textMeasure.y / 2
+        .x = screen.settings.width / 2 - text_measure.x / 2,
+        .y = screen.settings.header_height / 2 - text_measure.y / 2
     };
 
     DrawLineEx(VECTOR(0, screen.settings.header_height), VECTOR(screen.settings.width, screen.settings.header_height), screen.settings.line_thickness, BLACK);
-    DrawTextEx(screen.font, screen.title, pos, font_size, font_size / 10, BLACK);
+    DrawTextEx(screen.font, screen.title, pos, screen.font_size_header, spacing, BLACK);
+}
+
+void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
+    Vector2 world_obj_pos = grid2world(screen, RECT_POS(subprocess_obj.rect), subprocess_obj.rect.height, false, 0);
+
+    Rectangle entire_row = {
+        .x = world_obj_pos.x - screen.settings.sub_header_width,
+        .y = world_obj_pos.y,
+        .width = subprocess_obj.rect.width - 1,
+        .height = subprocess_obj.rect.height
+    };
+
+    Rectangle sub_header = {
+        .x = world_obj_pos.x - screen.settings.sub_header_width,
+        .y = world_obj_pos.y,
+        .width = screen.settings.sub_header_width,
+        .height = subprocess_obj.rect.height
+    };
+
+    const float spacing = screen.font_size_header / 10.0;
+    Vector2 text_measure = MeasureTextEx(screen.font, subprocess_obj.value->as.subprocess.name, screen.font_size_header, spacing);
+    Vector2 text_position = RECT_POS(sub_header);
+    text_position.y += sub_header.height/2.0 + text_measure.y/2.0;
+    text_position.x += sub_header.width/2.0 - text_measure.x/4.0;
+
+    float rotation = -90;
+
+    DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
+    DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
+    DrawTextPro(screen.font, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.font_size_header, spacing, BLACK);
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
@@ -693,24 +724,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
         }
 
     } else if (obj.value->kind == SYMB_SUBPROCESS) {
-        Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.height, false, 0);
-
-        Rectangle entire_row = {
-            .x = world_obj_pos.x - screen.settings.sub_header_width,
-            .y = world_obj_pos.y,
-            .width = obj.rect.width - 1,
-            .height = obj.rect.height
-        };
-
-        Rectangle sub_header = {
-            .x = world_obj_pos.x - screen.settings.sub_header_width,
-            .y = world_obj_pos.y,
-            .width = screen.settings.sub_header_width,
-            .height = obj.rect.height
-        };
-
-        DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
-        DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
+        draw_subprocess_header(screen, obj);
     }
 }
 
@@ -1004,7 +1018,6 @@ int main(int argc, char **argv) {
 
     InitWindow(screen.settings.width, screen.settings.height + screen.settings.header_height, screen.title);
     screen.font = LoadFont("./resources/Cascadia.ttf");
-    screen.font_size = 11;
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
