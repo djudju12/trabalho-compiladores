@@ -741,8 +741,8 @@ void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
 
     Vector2 text_measure = MeasureTextEx(screen.font, subprocess_obj.value->as.subprocess.name, screen.font_size_header, spacing);
     Vector2 text_position = RECT_POS(sub_header);
-    text_position.y += sub_header.height/2.0 + text_measure.y/2.0;
-    text_position.x += sub_header.width/2.0 - text_measure.x/4.0;
+    text_position.y += sub_header.height/2.0 + text_measure.x/2.0;
+    text_position.x += sub_header.width/2.0 - text_measure.y/2.0;
 
     DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
     DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
