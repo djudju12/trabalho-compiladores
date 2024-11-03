@@ -3,16 +3,16 @@
     <subprocess id='primeiro' name='Tal'>
         <events>
             <starter id='start' points='event1'/>
-            <col>
-                <task id='event1' name='Opa Gangan stile' points='segundo.start2' row='mid' />
-                <task id='event2' name='Opa Gangan stile' row='up' />
-            </col>
+            <task id='event1' name='Encomendar Pizza' points='event2'/>
+            <task id='event2' name='Opa Gangan stile' points='event4'/>
+            <task id='event3' name='Xicara' points='segundo.start2'/>
+            <task id='event4' name='batata' />
         </events>
     </subprocess>
 
     <subprocess id='segundo' name='Opa'>
         <events>
-            <starter id='start2'/>
+            <starter id='start2' points='primeiro.event1'/>
         </events>
     </subprocess>
 

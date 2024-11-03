@@ -91,7 +91,6 @@ typedef struct {
         struct Event_Symb {
             Event_Kind kind;
             char title[MAX_TOKEN_LEN];
-            size_t points_to_cnt;
             char points_to[3][MAX_TOKEN_LEN];
         } event;
 
@@ -572,47 +571,84 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.height, true, screen.settings.events_padding);
     Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
 
-    Vector2 start = {
-            .x = world_from.x + from.rect.width,
-            .y = world_from.y + from.rect.height / 2
-    };
-
+    Vector2 start = {0};
+    Vector2 three_lines = {0};
     Vector2 end = {0};
+    bool uses_three_lines = false;
+
     int diff_iy = from.rect.y - to.rect.y;
-    if (diff_iy == 0) {
-        end = (Vector2) {
-            .x = world_to.x,
-            .y = world_to.y + to.rect.height / 2
-        };
-    } else if (diff_iy > 0) {
-        end = (Vector2) {
-            .x = world_to.x + to.rect.width / 2,
-            .y = world_to.y + to.rect.height
-        };
-
-        Vector2 new_start = {
-            .x = end.x,
-            .y = start.y
-        };
-
-        DrawLineEx(start, new_start, screen.settings.line_thickness, BLACK);
-        start = new_start;
-    } else {
-        end = (Vector2) {
-            .x = world_to.x + to.rect.width / 2,
-            .y = world_to.y
-        };
-
-
-        Vector2 new_start = {
-            .x = end.x,
-            .y = start.y
-        };
-
-        DrawLineEx(start, new_start, screen.settings.line_thickness, BLACK);
-        start = new_start;
+    int diff_ix = from.rect.x - to.rect.x;
+    if (diff_iy == 0) { // mesma linha
+        if (diff_ix < 0) { // from atras
+            start.y = world_from.y + from.rect.height/2.0;
+            start.x = world_from.x + from.rect.width;
+            end.y = start.y;
+            end.x = world_to.x;
+        } else { // from na frente
+            start.y = world_from.y + from.rect.height/2.0;
+            start.x = world_from.x;
+            end.y = start.y;
+            end.x = world_to.x + to.rect.width;
+        }
+    } else if (diff_iy < 0) { // from acima
+        if (diff_ix < 0) { // from atras
+            three_lines = (Vector2) {
+                .y = world_from.y + from.rect.height,
+                .x = world_from.x + from.rect.width/2.0
+            };
+            uses_three_lines = true;
+            end.x = world_to.x;
+            end.y = world_to.y + to.rect.height/2.0;
+            start.x = three_lines.x;
+            start.y = end.y;
+            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+        } else if (diff_ix > 0) { // from na frente
+            three_lines = (Vector2) {
+                .y = world_from.y + from.rect.height,
+                .x = world_from.x + from.rect.width/2.0
+            };
+            uses_three_lines = true;
+            end.x = world_to.x + to.rect.width;
+            end.y = world_to.y + to.rect.height/2.0;
+            start.x = three_lines.x;
+            start.y = end.y;
+            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+        } else {
+            start.x = end.x = world_from.x + from.rect.width/2.0;
+            start.y = world_from.y + from.rect.height;
+            end.y = world_to.y;
+        }
+    } else { // from abaixo
+        if (diff_ix < 0) { // from atras
+            three_lines = (Vector2) {
+                .y = world_from.y + from.rect.height/2.0,
+                .x = world_from.x + from.rect.width
+            };
+            uses_three_lines = true;
+            end.x = world_to.x + to.rect.width/2.0;
+            end.y = world_to.y + to.rect.height;
+            start.x = end.x;
+            start.y = three_lines.y;
+            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+        } else if (diff_ix > 0) { // from na frente
+            three_lines = (Vector2) {
+                .y = world_from.y + from.rect.height/2.0,
+                .x = world_from.x
+            };
+            uses_three_lines = true;
+            end.x = world_to.x + to.rect.width/2.0;
+            end.y = world_to.y + to.rect.height;
+            start.x = end.x;
+            start.y = three_lines.y;
+            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+        } else {
+            start.x = end.x = world_from.x + from.rect.width/2.0;
+            start.y = world_from.y;
+            end.y = world_to.y + to.rect.height;
+        }
     }
 
+    DrawCircleV(uses_three_lines ? three_lines : start, 5, BLACK);
     draw_arrow_head(screen, start, end);
 }
 
@@ -713,7 +749,7 @@ void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
     DrawTextPro(screen.font, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.font_size_header, spacing, BLACK);
 }
 
-void draw_obj(Screen screen, Screen_Object obj, Hash_Map *symbols) {
+void draw_obj(Screen screen, Screen_Object obj) {
     if (obj.value->kind == SYMB_EVENT) {
         Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, screen.settings.events_padding);
 
@@ -735,17 +771,11 @@ void draw_obj(Screen screen, Screen_Object obj, Hash_Map *symbols) {
 
             case EVENT_TASK: {
                 DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, screen.settings.line_thickness, BLACK);
+                DrawRectangleRounded(world_obj_rect, 0.3f, 0, WHITE);
                 draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
             } break;
 
             default: ASSERT(0 && "Unreachable statement");
-        }
-
-        if (obj.value->as.event.points_to_cnt > 0) {
-            for (size_t i = 0; i < obj.value->as.event.points_to_cnt; i++) {
-                Key_Value *to = get_symbol(symbols, obj.value->as.event.points_to[i]);
-                draw_arrow(screen, obj, screen.screen_objects[to->value.obj_id]);
-            }
         }
 
     } else if (obj.value->kind == SYMB_SUBPROCESS) {
@@ -965,11 +995,10 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
 }
 
 void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
-    Symbol symbol = {
-        .obj_id = -1,
-        .as.event.kind = EVENT_TASK,
-        .kind = SYMB_EVENT
-    };
+    Symbol symbol = {0};
+    symbol.obj_id = -1;
+    symbol.as.event.kind = EVENT_TASK;
+    symbol.kind = SYMB_EVENT;
 
     char buffer[MAX_TOKEN_LEN];
     Key_Value *kv = NULL;
@@ -1001,7 +1030,6 @@ void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
             } else if (strncmp(buffer, "points", 7) == 0) {
                 symb_name(buffer, namespace, lexer->token.value);
                 memcpy(kv->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
-                kv->value.as.event.points_to_cnt = 1;
             } else if (strncmp(buffer, "row", 4) == 0) {
                 row_number = translate_row(lexer, lexer->token.value);
             } else {
@@ -1033,15 +1061,15 @@ void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
 }
 
 void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace) {
-    Symbol symbol = {
-        .obj_id = -1,
-        .as.event.kind = EVENT_STARTER,
-        .kind = SYMB_EVENT
-    };
+    Symbol symbol = {0};
+    symbol.obj_id = -1;
+    symbol.as.event.kind = EVENT_STARTER;
+    symbol.kind = SYMB_EVENT;
 
     char buffer[MAX_TOKEN_LEN];
     Key_Value *kv = NULL;
     bool id_founded = false;
+    int row_number = 1;
     for (;;) {
         next_token_fail_if_eof(lexer);
         if (lexer->token.kind == TOKEN_SLASH) {
@@ -1066,7 +1094,8 @@ void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace)
             if (strncmp(buffer, "points", 7) == 0) {
                 symb_name(buffer, namespace, lexer->token.value);
                 memcpy(kv->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
-                kv->value.as.event.points_to_cnt = 1;
+            } else if (strncmp(buffer, "row", 4) == 0) {
+                row_number = translate_row(lexer, lexer->token.value);
             } else {
                 PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
                 FAIL;
@@ -1087,7 +1116,7 @@ void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace)
             .height = 40,
             .width = 40,
             .x = col,
-            .y = screen->rows + 1
+            .y = screen->rows + row_number
         },
         .value = &kv->value
     };
@@ -1141,7 +1170,6 @@ void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace)
 
             symb_name(buffer, namespace, lexer->token.value);
             memcpy(kv->value.as.event.points_to[buffer_to_cp], buffer, MAX_TOKEN_LEN);
-            kv->value.as.event.points_to_cnt += kv->value.as.event.points_to_cnt >= 3 ? 0 : 1;
         } else {
             PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
             FAIL;
@@ -1221,7 +1249,17 @@ int main(int argc, char **argv) {
         ClearBackground(WHITE);
         draw_header(screen);
         for (size_t i = 0; i < screen.objs_cnt; i++) {
-            draw_obj(screen, screen.screen_objects[i], &lexer.symbols);
+            Screen_Object obj = screen.screen_objects[i];
+            for (size_t j = 0; j < 3; j++) { // UP, MID, DOWN
+                Key_Value *to = get_symbol(&lexer.symbols, obj.value->as.event.points_to[j]);
+                if (to != NULL) {
+                    draw_arrow(screen, obj, screen.screen_objects[to->value.obj_id]);
+                }
+            }
+        }
+
+        for (size_t i = 0; i < screen.objs_cnt; i++) {
+            draw_obj(screen, screen.screen_objects[i]);
         }
 
         // DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.settings.width, (screen.height/2) + HEADER_HEIGHT, RED);
