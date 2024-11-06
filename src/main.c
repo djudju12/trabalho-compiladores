@@ -485,13 +485,14 @@ typedef struct {
 typedef struct {
     Screen_Object screen_objects[MAX_SCREEN_OBJECTS];
     size_t objs_cnt;
-    Font font;
-    int font_size;
-    int font_size_header;
     char title[MAX_TOKEN_LEN];
     int cols, rows;
 
     struct {
+        Font font;
+        Font font_header;
+        int font_size;
+        int font_size_header;
         float line_thickness;
         int height, width;
         int header_height;
@@ -517,8 +518,8 @@ void init_screen(Screen *screen) {
 void setup_screen(Screen *screen) {
     screen->settings.height = (screen->rows / screen->settings.rows_per_sub) * screen->settings.sub_height;
     screen->settings.width = screen->settings.sub_width;
-    screen->font_size = 12;
-    screen->font_size_header = screen->font_size*1.5;
+    screen->settings.font_size = 10;
+    screen->settings.font_size_header = screen->settings.font_size*1.5;
 }
 
 size_t push_obj(Screen *screen, Screen_Object obj) {
@@ -709,8 +710,8 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
 }
 
 void draw_header(Screen screen) {
-    const float spacing = screen.font_size_header / 10.0;
-    Vector2 text_measure = MeasureTextEx(screen.font, screen.title, screen.font_size_header, spacing);
+    const float spacing = screen.settings.font_size_header / 10.0;
+    Vector2 text_measure = MeasureTextEx(screen.settings.font_header, screen.title, screen.settings.font_size_header, spacing);
 
     Vector2 pos = {
         .x = screen.settings.width / 2 - text_measure.x / 2,
@@ -718,7 +719,7 @@ void draw_header(Screen screen) {
     };
 
     DrawLineEx(VECTOR(0, screen.settings.header_height), VECTOR(screen.settings.width, screen.settings.header_height), screen.settings.line_thickness, BLACK);
-    DrawTextEx(screen.font, screen.title, pos, screen.font_size_header, spacing, BLACK);
+    DrawTextEx(screen.settings.font_header, screen.title, pos, screen.settings.font_size_header, spacing, BLACK);
 }
 
 void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
@@ -738,17 +739,17 @@ void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
         .height = subprocess_obj.rect.height
     };
 
-    const float spacing = screen.font_size_header / 10.0;
+    const float spacing = screen.settings.font_size_header / 10.0;
     const float rotation = -90;
 
-    Vector2 text_measure = MeasureTextEx(screen.font, subprocess_obj.value->as.subprocess.name, screen.font_size_header, spacing);
+    Vector2 text_measure = MeasureTextEx(screen.settings.font_header, subprocess_obj.value->as.subprocess.name, screen.settings.font_size_header, spacing);
     Vector2 text_position = RECT_POS(sub_header);
     text_position.y += sub_header.height/2.0 + text_measure.x/2.0;
     text_position.x += sub_header.width/2.0 - text_measure.y/2.0;
 
     DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
     DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
-    DrawTextPro(screen.font, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.font_size_header, spacing, BLACK);
+    DrawTextPro(screen.settings.font_header, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.settings.font_size_header, spacing, BLACK);
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
@@ -774,7 +775,7 @@ void draw_obj(Screen screen, Screen_Object obj) {
             case EVENT_TASK: {
                 DrawRectangleRounded(world_obj_rect, 0.3f, 0, WHITE);
                 DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, screen.settings.line_thickness, BLACK);
-                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.font_size, 5);
+                draw_fitting_text(world_obj_rect, screen.settings.font, obj.value->as.event.title, screen.settings.font_size, 5);
             } break;
 
             case EVENT_GATEWAY: {
@@ -1117,8 +1118,8 @@ void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
 
     Screen_Object obj = {
         .rect = {
-            .height = 60,
-            .width = 80,
+            .height = 80,
+            .width = 100,
             .x = col,
             .y = screen->rows + row_number
         },
@@ -1249,8 +1250,8 @@ void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace)
 
     Screen_Object obj = {
         .rect = {
-            .height = 60,
-            .width = 60,
+            .height = 80,
+            .width = 80,
             .x = col,
             .y = screen->rows + 1
         },
@@ -1347,6 +1348,8 @@ int translate_row(Lexer *lexer, const char *row) {
     FAIL;
 }
 
+#include "bundle.c"
+
 int main(int argc, char **argv) {
     char *program_name = shift_args(&argc, &argv);
     if (argc == 0) {
@@ -1371,7 +1374,8 @@ int main(int argc, char **argv) {
     setup_screen(&screen);
 
     InitWindow(screen.settings.width, screen.settings.height + screen.settings.header_height, screen.title);
-    screen.font = LoadFont("./resources/Cascadia.ttf");
+    screen.settings.font = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT_RUBIK].size, screen.settings.font_size, NULL, 0);
+    screen.settings.font_header = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT].size, screen.settings.font_size_header, NULL, 0);
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
