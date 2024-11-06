@@ -691,7 +691,7 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
     rect.height -= margin * 2;
     Vector2 pos = {.x = rect.x, .y = rect.y};
 
-    const float spacing = font_size / 10.0;
+    const float spacing = font_size / 8.0;
     int space_left = rect.width;
     for (int i = 0; i < word_count; i++) {
         int word_len = MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
@@ -1011,7 +1011,16 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
 }
 
 void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
-    assert_next_token(lexer, TOKEN_CLTAG);
+    next_token_fail_if_eof(lexer);
+    if (lexer->token.kind == TOKEN_SLASH) {
+        assert_next_token(lexer, TOKEN_CLTAG);
+        return;
+    }
+
+    if (lexer->token.kind != TOKEN_CLTAG) {
+        PRINT_ERROR(lexer, "Syntax error");
+        FAIL;
+    }
 
     int count = 0;
     for (;;) {
@@ -1118,7 +1127,7 @@ void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
 
     Screen_Object obj = {
         .rect = {
-            .height = 80,
+            .height = 90,
             .width = 100,
             .x = col,
             .y = screen->rows + row_number

@@ -8,12 +8,15 @@
                 <task id='task_1' row='up' name='Task 1'/>
                 <task id='task_2' row='mid' name='Task 2' points='finale'/>
             </col>
+            <col/>
             <end id='finale' />
         </events>
     </subprocess>
 
     <subprocess id='second_subprocess' name='Other Subprocess'>
         <events>
+            <col/>
+            <col/>
             <task id='task_3' row='up' name='Task 3'/>
         </events>
     </subprocess>
