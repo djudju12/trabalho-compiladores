@@ -1042,7 +1042,6 @@ void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
             FAIL;
         }
 
-
         if (lexer->token.kind == TOKEN_TYPE) {
             parse_event(lexer, screen, cur_col, namespace);
         } else {
