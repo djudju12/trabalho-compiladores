@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bundle.c"
 #include "raylib.h"
 #include "raymath.h"
 
@@ -196,7 +197,7 @@ Key_Value* put_symbol(Hash_Map *map, char *key, Symbol symbol) {
 }
 
 /*******************************************************************\
-| Section: Tokens definition                                        |
+| Section: Tokens                                                   |
 \*******************************************************************/
 
 enum Token_Kind {
@@ -324,7 +325,6 @@ void build_keyword_table(Keyword_Table *keyword_table) {
 
 /*******************************************************************\
 | Section: Lexer                                                    |
-| TODO: Write somehting about the implementation of the lexer       |
 \*******************************************************************/
 
 #define PRINT_ERROR(lexer, msg)                                         \
@@ -474,7 +474,7 @@ void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
 \*******************************************************************/
 
 #define RECT_POS(rect) (Vector2) { .x = (rect).x, .y = (rect).y }
-#define VECTOR(vx, vy) (Vector2) { .x = (vx), .y = (vy)}
+#define VECTOR(vx, vy) (Vector2) { .x = (vx), .y = (vy) }
 
 typedef struct {
     Rectangle rect;
@@ -1346,17 +1346,19 @@ Event_Kind translate_event(const char *event) {
 int translate_row(Lexer *lexer, const char *row) {
     if (strncmp(row, "up", 3) == 0) {
         return 0;
-    } else if (strncmp(row, "mid", 4) == 0) {
+    }
+
+    if (strncmp(row, "mid", 4) == 0) {
         return 1;
-    } else if (strncmp(row, "down", 5) == 0) {
+    }
+
+    if (strncmp(row, "down", 5) == 0) {
         return 2;
     }
 
     PRINT_ERROR_FMT(lexer, "Invalid row name `%s`. Expected values: up, mid, down", row);
     FAIL;
 }
-
-#include "bundle.c"
 
 int main(int argc, char **argv) {
     char *program_name = shift_args(&argc, &argv);
@@ -1371,12 +1373,6 @@ int main(int argc, char **argv) {
 
     init_lexer(&lexer, file_path);
     init_screen(&screen);
-
-    // next_token(&lexer);
-    // while (lexer.token.kind != TOKEN_EOF) {
-    //     printf("(`%s`, %s)\n", lexer.token.value,
-    //     TOKEN_DESC[lexer.token.kind]); next_token(&lexer);
-    // }
 
     parse(&lexer, &screen);
     setup_screen(&screen);
@@ -1401,8 +1397,6 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < screen.objs_cnt; i++) {
             draw_obj(screen, screen.screen_objects[i]);
         }
-
-        // DrawLine(0, (screen.height/2) + HEADER_HEIGHT, screen.settings.width, (screen.height/2) + HEADER_HEIGHT, RED);
 
         EndDrawing();
     }
