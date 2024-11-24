@@ -892,40 +892,29 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
         FAIL;
     }
 
-    bool id_found = false;
+    Symbol symbol = {
+        .kind = SYMB_SUBPROCESS,
+        .obj_id = -1
+    };
+
+    Attr_List attrs = {0};
     char subprocess_namespace[MAX_TOKEN_LEN] = {0};
-    char subprocess_name[MAX_TOKEN_LEN] = {0};
-    for (;;) {
-        next_token_fail_if_eof(lexer);
-        if (lexer->token.kind == TOKEN_CLTAG) break;
-        if (lexer->token.kind != TOKEN_ID) {
-            PRINT_ERROR(lexer, "Syntax error");
-            FAIL;
-        }
 
-        if (strncmp(lexer->token.value, "id", 3) == 0) {
-            assert_next_token(lexer, TOKEN_ATR);
-            assert_next_token(lexer, TOKEN_STR);
-            memcpy(subprocess_namespace, lexer->token.value, MAX_TOKEN_LEN);
-            id_found = true;
-        } else if (strncmp(lexer->token.value, "name", 5) == 0) {
-            assert_next_token(lexer, TOKEN_ATR);
-            assert_next_token(lexer, TOKEN_STR);
-            memcpy(subprocess_name, lexer->token.value, MAX_TOKEN_LEN);
-        } else {
-            PRINT_ERROR_FMT(lexer, "Unexpected attribute name %s for subprocess", lexer->token.value);
-            FAIL;
-        }
-    }
-
-    if (!id_found) {
-        PRINT_ERROR(lexer, "Subprocess must have an `id`");
+    parse_attrs(lexer, &attrs);
+    Attr *id_attr = get_attr(attrs, "id");
+    if (id_attr == NULL) {
+        PRINT_ERROR(lexer, "Subprocess must have  an `id`");
         FAIL;
     }
 
-    Symbol symbol = {.kind = SYMB_SUBPROCESS, .obj_id = -1};
+    memcpy(subprocess_namespace, id_attr->value, MAX_TOKEN_LEN);
+
     Key_Value *entry = put_symbol(&lexer->symbols, subprocess_namespace, symbol);
-    assert(entry != NULL);
+
+    Attr *name = get_attr(attrs, "name");
+    if (name) {
+        memcpy(entry->value.as.subprocess.name, name->value, MAX_TOKEN_LEN);
+    }
 
     parse_events(lexer, screen, subprocess_namespace);
 
@@ -940,9 +929,7 @@ void parse_subprocess(Lexer *lexer, Screen *screen) {
     };
 
     screen->rows += screen->settings.rows_per_sub;
-
     entry->value.obj_id = push_obj(screen, subprocess_obj);
-    memcpy(entry->value.as.subprocess.name, subprocess_name, MAX_TOKEN_LEN);
 
     assert_next_token(lexer, TOKEN_OPTAG);
     assert_next_token(lexer, TOKEN_SLASH);
@@ -1072,8 +1059,12 @@ void parse_attrs(Lexer *lexer, Attr_List *attrs) {
             break;
         }
 
+        if (lexer->token.kind == TOKEN_CLTAG) {
+            break;
+        }
+
         if (lexer->token.kind != TOKEN_ID) {
-            PRINT_ERROR(lexer, "Syntax error");
+            PRINT_ERROR_FMT(lexer, "Invalid token %s", lexer->token.value);
             FAIL;
         }
 
