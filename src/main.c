@@ -1155,13 +1155,13 @@ Screen_Object parse_event_gateway(Attr_List attrs, Key_Value *symbol, Screen *sc
 
     Attr *mid = get_attr(attrs, "mid");
     if (mid) {
-        symb_name(buffer, namespace, up->value);
+        symb_name(buffer, namespace, mid->value);
         memcpy(symbol->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
     }
 
     Attr *down = get_attr(attrs, "down");
     if (down) {
-        symb_name(buffer, namespace, up->value);
+        symb_name(buffer, namespace, down->value);
         memcpy(symbol->value.as.event.points_to[RECT_DOWN], buffer, MAX_TOKEN_LEN);
     }
 
