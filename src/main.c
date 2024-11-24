@@ -792,18 +792,48 @@ void draw_obj(Screen screen, Screen_Object obj) {
 
 /*******************************************************************\
 | Section: Parser                                                   |
-| TODO: Write somehting about the implementation of the Parser      |
 \*******************************************************************/
+
+#define MAX_ATTRS 128
+
+typedef struct {
+    char id[MAX_TOKEN_LEN];
+    char value[MAX_TOKEN_LEN];
+} Attr;
+
+
+typedef struct {
+    Attr items[MAX_ATTRS];
+    size_t len;
+} Attr_List;
+
+Attr *get_attr(Attr_List attrs, char *id) {
+    size_t len_id = strlen(id);
+    ASSERT(len_id < MAX_TOKEN_LEN && "Length of id cannot be greater than MAX_TOKEN_LEN");
+
+    for (size_t i = 0; i < attrs.len; i++) {
+        Attr *attr = &attrs.items[i];
+        if (strncmp(attr->id, id, len_id) == 0) {
+            return attr;
+        }
+    }
+
+    return NULL;
+}
+
 void parse(Lexer *lexer, Screen *screen);
 void parse_process(Lexer *lexer, Screen *screen);
 void parse_subprocess(Lexer *lexer, Screen *screen);
 void parse_events(Lexer *lexer, Screen *screen, char *namespace);
 void parse_columns(Lexer *lexer, Screen *screen, int col, char *namespace);
+
 void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace);
-void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace);
-void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace);
-void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace);
-void parse_event_end(Lexer *lexer, Screen *screen, int col, char *namespace);
+void parse_attrs(Lexer *lexer, Attr_List *attrs);
+
+Screen_Object parse_event_task(Lexer *lexer, Attr_List attrs, Key_Value *symbol,  Screen *screen, int col, char *namespace);
+Screen_Object parse_event_starter(Lexer *lexer, Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace);
+Screen_Object parse_event_gateway(Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace);
+Screen_Object parse_event_end(Screen *screen, int col);
 
 Event_Kind translate_event(const char *event);
 int translate_row(Lexer *lexer, const char *column);
@@ -996,6 +1026,7 @@ void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
 
 void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
     ASSERT(lexer->token.kind == TOKEN_TYPE && "Invalid event token");
+    char buffer[MAX_TOKEN_LEN];
 
     Event_Kind event_kind = translate_event(lexer->token.value);
     if (event_kind == EVENT_INVALID) {
@@ -1003,26 +1034,38 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
         FAIL;
     }
 
-    switch (event_kind) {
-        case EVENT_TASK:    parse_event_task(lexer, screen, col, namespace);    break;
-        case EVENT_STARTER: parse_event_starter(lexer, screen, col, namespace); break;
-        case EVENT_GATEWAY: parse_event_gateway(lexer, screen, col, namespace); break;
-        case EVENT_END:     parse_event_end(lexer, screen, col, namespace);     break;
-        default: ASSERT(0 && "Unreachable statement");
-    }
-}
+    Attr_List attrs = {0};
+    parse_attrs(lexer, &attrs);
 
-void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
+    Attr *id_attr = get_attr(attrs, "id");
+    if (id_attr == NULL) {
+        PRINT_ERROR(lexer, "Event need to have an `id`");
+        FAIL;
+    }
+
+
     Symbol symbol = {0};
-    symbol.obj_id = -1;
-    symbol.as.event.kind = EVENT_TASK;
+    symbol.as.event.kind = event_kind;
     symbol.kind = SYMB_EVENT;
 
-    char buffer[MAX_TOKEN_LEN];
-    Key_Value *kv = NULL;
-    bool id_founded = false;
-    int row_number = 1;
-    for (;;) {
+    symb_name(buffer, namespace, id_attr->value);
+    Key_Value *kv = put_symbol(&lexer->symbols, buffer, symbol);
+
+    Screen_Object obj;
+    switch (event_kind) {
+        case EVENT_TASK:    obj = parse_event_task(lexer, attrs, kv, screen, col, namespace);    break;
+        case EVENT_STARTER: obj = parse_event_starter(lexer, attrs, kv, screen, col, namespace); break;
+        case EVENT_GATEWAY: obj = parse_event_gateway(attrs, kv, screen, col, namespace);        break;
+        case EVENT_END:     obj = parse_event_end(screen, col);                                  break;
+        default: ASSERT(0 && "Unreachable statement");
+    }
+
+    obj.value = &kv->value;
+    kv->value.obj_id = push_obj(screen, obj);
+}
+
+void parse_attrs(Lexer *lexer, Attr_List *attrs) {
+    while (attrs->len < MAX_ATTRS) {
         next_token_fail_if_eof(lexer);
         if (lexer->token.kind == TOKEN_SLASH) {
             assert_next_token(lexer, TOKEN_CLTAG);
@@ -1034,233 +1077,114 @@ void parse_event_task(Lexer *lexer, Screen *screen, int col, char *namespace) {
             FAIL;
         }
 
-        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
+        Attr *new_attr = &attrs->items[attrs->len++];
+
+        memcpy(new_attr->id, lexer->token.value, MAX_TOKEN_LEN);
+
         assert_next_token(lexer, TOKEN_ATR);
         assert_next_token(lexer, TOKEN_STR);
 
-        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
-            symb_name(buffer, namespace, lexer->token.value);
-            kv = put_symbol(&lexer->symbols, buffer, symbol);
-            id_founded = true;
-        } else if (id_founded && kv != NULL) {
-            if (strncmp(buffer, "name", 5) == 0) {
-                memcpy(kv->value.as.event.title, lexer->token.value,MAX_TOKEN_LEN);
-            } else if (strncmp(buffer, "points", 7) == 0) {
-                symb_name(buffer, namespace, lexer->token.value);
-                memcpy(kv->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
-            } else if (strncmp(buffer, "row", 4) == 0) {
-                row_number = translate_row(lexer, lexer->token.value);
-            } else {
-                PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
-                FAIL;
-            }
-        } else {
-            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
-            FAIL;
-        }
+        memcpy(new_attr->value, lexer->token.value, MAX_TOKEN_LEN);
+    }
+}
+
+Screen_Object parse_event_task(Lexer *lexer, Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace) {
+    char buffer[MAX_TOKEN_LEN];
+    int row_number = 1;
+
+    Attr *name = get_attr(attrs, "name");
+    if (name) {
+        memcpy(symbol->value.as.event.title, name->value, MAX_TOKEN_LEN);
     }
 
-    if (!id_founded) {
-        PRINT_ERROR(lexer, "Event need to have and `id`");
-        FAIL;
+    Attr *points = get_attr(attrs, "points");
+    if (points) {
+        symb_name(buffer, namespace, points->value);
+        memcpy(symbol->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
     }
 
-    Screen_Object obj = {
+    Attr *row = get_attr(attrs, "row");
+    if (row) {
+        row_number = translate_row(lexer, row->value);
+    }
+
+    return (Screen_Object) {
         .rect = {
             .height = 90,
             .width = 100,
             .x = col,
             .y = screen->rows + row_number
-        },
-        .value = &kv->value
+        }
     };
-
-    kv->value.obj_id = push_obj(screen, obj);
 }
 
-void parse_event_starter(Lexer *lexer, Screen *screen, int col, char *namespace) {
-    Symbol symbol = {0};
-    symbol.obj_id = -1;
-    symbol.as.event.kind = EVENT_STARTER;
-    symbol.kind = SYMB_EVENT;
-
+Screen_Object parse_event_starter(Lexer *lexer, Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace) {
     char buffer[MAX_TOKEN_LEN];
-    Key_Value *kv = NULL;
-    bool id_founded = false;
     int row_number = 1;
-    for (;;) {
-        next_token_fail_if_eof(lexer);
-        if (lexer->token.kind == TOKEN_SLASH) {
-            assert_next_token(lexer, TOKEN_CLTAG);
-            break;
-        }
 
-        if (lexer->token.kind != TOKEN_ID) {
-            PRINT_ERROR(lexer, "Syntax error");
-            FAIL;
-        }
-
-        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
-        assert_next_token(lexer, TOKEN_ATR);
-        assert_next_token(lexer, TOKEN_STR);
-
-        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
-            symb_name(buffer, namespace, lexer->token.value);
-            kv = put_symbol(&lexer->symbols, buffer, symbol);
-            id_founded = true;
-        } else if (id_founded && kv != NULL) {
-            if (strncmp(buffer, "points", 7) == 0) {
-                symb_name(buffer, namespace, lexer->token.value);
-                memcpy(kv->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
-            } else if (strncmp(buffer, "row", 4) == 0) {
-                row_number = translate_row(lexer, lexer->token.value);
-            } else {
-                PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
-                FAIL;
-            }
-        } else {
-            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
-            FAIL;
-        }
+    Attr *points = get_attr(attrs, "points");
+    if (points) {
+        symb_name(buffer, namespace, points->value);
+        memcpy(symbol->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
     }
 
-    if (!id_founded) {
-        PRINT_ERROR(lexer, "Event need to have and `id`");
-        FAIL;
+    Attr *row = get_attr(attrs, "row");
+    if (row) {
+        row_number = translate_row(lexer, row->value);
     }
 
-    Screen_Object obj = {
+    return (Screen_Object) {
         .rect = {
             .height = 40,
             .width = 40,
             .x = col,
             .y = screen->rows + row_number
         },
-        .value = &kv->value
     };
-
-    kv->value.obj_id = push_obj(screen, obj);
 }
 
-void parse_event_gateway(Lexer *lexer, Screen *screen, int col, char *namespace) {
-    Symbol symbol = {0};
-    symbol.obj_id = -1;
-    symbol.as.event.kind = EVENT_GATEWAY;
-    symbol.kind = SYMB_EVENT;
-
+Screen_Object parse_event_gateway(Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace) {
     char buffer[MAX_TOKEN_LEN];
-    Key_Value *kv = NULL;
-    bool id_founded = false;
-    for (;;) {
-        next_token_fail_if_eof(lexer);
-        if (lexer->token.kind == TOKEN_SLASH) {
-            assert_next_token(lexer, TOKEN_CLTAG);
-            break;
-        }
+    int row_number = 1;
 
-        if (lexer->token.kind != TOKEN_ID) {
-            PRINT_ERROR(lexer, "Syntax error");
-            FAIL;
-        }
-
-        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
-        assert_next_token(lexer, TOKEN_ATR);
-        assert_next_token(lexer, TOKEN_STR);
-
-        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
-            symb_name(buffer, namespace, lexer->token.value);
-            kv = put_symbol(&lexer->symbols, buffer, symbol);
-            id_founded = true;
-        } else if (id_founded && kv != NULL) {
-            size_t buffer_to_cp;
-            if (strncmp(buffer, "up", 3) == 0) {
-                buffer_to_cp = RECT_UP;
-            } else if (strncmp(buffer, "mid", 4) == 0) {
-                buffer_to_cp = RECT_MID;
-            } else if (strncmp(buffer, "down", 5) == 0) {
-                buffer_to_cp = RECT_DOWN;
-            } else {
-                PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`",buffer);
-                FAIL;
-            }
-
-            symb_name(buffer, namespace, lexer->token.value);
-            memcpy(kv->value.as.event.points_to[buffer_to_cp], buffer, MAX_TOKEN_LEN);
-        } else {
-            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`. Event `id` has to be the first attribute", buffer);
-            FAIL;
-        }
+    Attr *up = get_attr(attrs, "up");
+    if (up) {
+        symb_name(buffer, namespace, up->value);
+        memcpy(symbol->value.as.event.points_to[RECT_UP], buffer, MAX_TOKEN_LEN);
     }
 
-    if (!id_founded) {
-        PRINT_ERROR(lexer, "Event need to have and `id`");
-        FAIL;
+    Attr *mid = get_attr(attrs, "mid");
+    if (mid) {
+        symb_name(buffer, namespace, up->value);
+        memcpy(symbol->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
     }
 
-    Screen_Object obj = {
+    Attr *down = get_attr(attrs, "down");
+    if (down) {
+        symb_name(buffer, namespace, up->value);
+        memcpy(symbol->value.as.event.points_to[RECT_DOWN], buffer, MAX_TOKEN_LEN);
+    }
+
+
+    return (Screen_Object) {
         .rect = {
             .height = 80,
             .width = 80,
             .x = col,
-            .y = screen->rows + 1
+            .y = screen->rows + row_number
         },
-        .value = &kv->value
     };
-
-    kv->value.obj_id = push_obj(screen, obj);
 }
 
-void parse_event_end(Lexer *lexer, Screen *screen, int col, char *namespace) {
-    Symbol symbol = {0};
-    symbol.obj_id = -1;
-    symbol.as.event.kind = EVENT_END;
-    symbol.kind = SYMB_EVENT;
-
-    char buffer[MAX_TOKEN_LEN];
-    Key_Value *kv = NULL;
-    bool id_founded = false;
-    for (;;) {
-        next_token_fail_if_eof(lexer);
-        if (lexer->token.kind == TOKEN_SLASH) {
-            assert_next_token(lexer, TOKEN_CLTAG);
-            break;
-        }
-
-        if (lexer->token.kind != TOKEN_ID) {
-            PRINT_ERROR(lexer, "Syntax error");
-            FAIL;
-        }
-
-        memcpy(buffer, lexer->token.value, MAX_TOKEN_LEN);
-        assert_next_token(lexer, TOKEN_ATR);
-        assert_next_token(lexer, TOKEN_STR);
-
-        if (!id_founded && strncmp(buffer, "id", 3) == 0) {
-            symb_name(buffer, namespace, lexer->token.value);
-            kv = put_symbol(&lexer->symbols, buffer, symbol);
-            id_founded = true;
-        } else {
-            PRINT_ERROR_FMT(lexer, "Invalid event attribute `%s`.", buffer);
-            FAIL;
-        }
-    }
-
-    if (!id_founded) {
-        PRINT_ERROR(lexer, "Event need to have and `id`");
-        FAIL;
-    }
-
-    Screen_Object obj = {
+Screen_Object parse_event_end(Screen *screen, int col) {
+    return (Screen_Object) {
         .rect = {
             .height = 40,
             .width = 40,
             .x = col,
             .y = screen->rows + 1
-        },
-        .value = &kv->value
+        }
     };
-
-    kv->value.obj_id = push_obj(screen, obj);
 }
 
 
