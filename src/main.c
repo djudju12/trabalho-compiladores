@@ -200,7 +200,7 @@ Key_Value* put_symbol(Hash_Map *map, char *key, Symbol symbol) {
 | Section: Tokens                                                   |
 \*******************************************************************/
 
-enum Token_Kind {
+typedef enum {
     TOKEN_PROCESS = 0,
     TOKEN_OPTAG,
     TOKEN_CLTAG,
@@ -214,7 +214,7 @@ enum Token_Kind {
     TOKEN_COL,
     TOKEN_SLASH,
     __TOKENS_COUNT
-};
+} Token_Kind;
 
 char *TOKEN_DESC[]  = {
     [TOKEN_PROCESS]     = "PROCESS",
@@ -238,75 +238,26 @@ _Static_assert(
 
 typedef struct {
     char value[MAX_TOKEN_LEN];
-    enum Token_Kind kind;
+    Token_Kind kind;
 } Token;
 
 /*******************************************************************\
 | Section: Key Words Table                                          |
-| This is a kind of self-organizing linked list where the last      |
-| used keyword is put in the top node of the list. More information |
-| about this structure can be found in the book:                    |
-| Algorithms + Data Structures = Programs - Niklaus Wirth           |
 \*******************************************************************/
 
-typedef struct Keyword_Node Keyword_Node;
-
-struct Keyword_Node {
+typedef struct {
     char *key;
     size_t key_len;
-    Token token;
-    Keyword_Node *next;
-};
+    Token_Kind kind;
+} Keyword;
 
-typedef struct {
-    Keyword_Node *head;
-    Keyword_Node *current;
-} Keyword_Table;
-
-Keyword_Node *get_keyword(Keyword_Table *table, char *key, size_t key_len) {
-    if (key_len == table->head->key_len && memcmp(table->head->key, key, key_len) == 0) {
-        return table->head;
+#define NEW_KEYWORD(_key, token_kind)                     \
+    {                                                     \
+        .key = (_key), .key_len = ARRAY_SIZE((_key)) - 1, \
+        .kind = (token_kind),                             \
     }
 
-    table->current = table->head;
-    while (table->current->next != NULL) {
-        if (key_len == table->current->next->key_len && memcmp(table->current->next->key, key, key_len) == 0) {
-            Keyword_Node *new_head = table->current->next;
-            table->current->next = table->current->next->next;
-            new_head->next = table->head;
-            table->head = new_head;
-            return new_head;
-        }
-
-        table->current = table->current->next;
-    }
-
-    return NULL;
-}
-
-void set_keyword(Keyword_Table *table, Keyword_Node *keyword) {
-    if (table->head == NULL) {
-        table->head = keyword;
-        return;
-    }
-
-    table->current = table->head;
-    while (table->current->next != NULL) {
-        table->current = table->current->next;
-    }
-
-    table->current->next = keyword;
-}
-
-#define NEW_KEYWORD(_key, token_kind)                                \
-    {                                                                \
-        .key = (_key), .key_len = ARRAY_SIZE((_key)) - 1, .token = { \
-            .kind = (token_kind),                                    \
-            .value = (_key)                                          \
-        }                                                            \
-    }
-
-static Keyword_Node keywords[] = {
+static Keyword keywords[] = {
     NEW_KEYWORD("process", TOKEN_PROCESS),
     NEW_KEYWORD("events", TOKEN_EVENTS),
     NEW_KEYWORD("col", TOKEN_COL),
@@ -317,10 +268,15 @@ static Keyword_Node keywords[] = {
     NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)
 };
 
-void build_keyword_table(Keyword_Table *keyword_table) {
+Token_Kind get_kind(char *key, size_t key_len) {
     for (size_t i = 0; i < ARRAY_SIZE(keywords); i++) {
-        set_keyword(keyword_table, &keywords[i]);
+        Keyword kw = keywords[i];
+        if (key_len == kw.key_len && strncmp(key, kw.key, key_len) == 0) {
+            return kw.kind;
+        }
     }
+
+    return TOKEN_ID;
 }
 
 /*******************************************************************\
@@ -340,7 +296,6 @@ typedef struct {
     size_t col, row;
     const char *file_path;
     Hash_Map symbols;
-    Keyword_Table keyword_table;
     Token token;
 } Lexer;
 
@@ -350,7 +305,6 @@ void init_lexer(Lexer *lexer, const char *file_path) {
     lexer->file_path = file_path;
     lexer->content = read_file(file_path);
     lexer->symbols.len = 0;
-    build_keyword_table(&lexer->keyword_table);
 }
 
 char lex_getc(Lexer *lexer) {
@@ -392,18 +346,10 @@ Token next_token(Lexer *lexer) {
     }
 
     switch (c) {
-        case '<':
-            lexer->token.kind = TOKEN_OPTAG;
-            break;
-        case '>':
-            lexer->token.kind = TOKEN_CLTAG;
-            break;
-        case '=':
-            lexer->token.kind = TOKEN_ATR;
-            break;
-        case '/':
-            lexer->token.kind = TOKEN_SLASH;
-            break;
+        case '<': lexer->token.kind = TOKEN_OPTAG; break;
+        case '>': lexer->token.kind = TOKEN_CLTAG; break;
+        case '=': lexer->token.kind = TOKEN_ATR;   break;
+        case '/': lexer->token.kind = TOKEN_SLASH; break;
 
         case '\'': {
             len = 0;
@@ -435,12 +381,7 @@ Token next_token(Lexer *lexer) {
             }
 
             lexer->token.value[len] = '\0';
-            Keyword_Node *keyword = get_keyword(&lexer->keyword_table, lexer->token.value, len);
-            if (keyword != NULL) {
-                lexer->token.kind = keyword->token.kind;
-            } else {
-                lexer->token.kind = TOKEN_ID;
-            }
+            lexer->token.kind = get_kind(lexer->token.value, len);
         }
     }
 
@@ -456,7 +397,7 @@ void next_token_fail_if_eof(Lexer *lexer) {
     }
 }
 
-void assert_next_token(Lexer *lexer, enum Token_Kind expected) {
+void assert_next_token(Lexer *lexer, Token_Kind expected) {
     next_token(lexer);
     if (lexer->token.kind != expected) {
         PRINT_ERROR_FMT(lexer, "Expected %s, found `%s`", TOKEN_DESC[expected], lexer->token.value);
