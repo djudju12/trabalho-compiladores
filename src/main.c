@@ -73,6 +73,8 @@ typedef enum {
     EVENT_TASK,
     EVENT_GATEWAY,
     EVENT_INVALID,
+    EVENT_WAIT,
+    EVENT_MAIL,
     EVENT_END
 } Event_Kind;
 
@@ -263,6 +265,8 @@ static Keyword keywords[] = {
     NEW_KEYWORD("col", TOKEN_COL),
     NEW_KEYWORD("task", TOKEN_TYPE),
     NEW_KEYWORD("gateway", TOKEN_TYPE),
+    NEW_KEYWORD("wait", TOKEN_TYPE),
+    NEW_KEYWORD("mail", TOKEN_TYPE),
     NEW_KEYWORD("end", TOKEN_TYPE),
     NEW_KEYWORD("starter", TOKEN_TYPE),
     NEW_KEYWORD("subprocess", TOKEN_SUBPROCESS)
@@ -429,6 +433,9 @@ typedef struct {
     char title[MAX_TOKEN_LEN];
     int cols, rows;
 
+    Texture2D wait_texture;
+    Texture2D mail_texture;
+
     struct {
         Font font;
         Font font_header;
@@ -483,6 +490,7 @@ Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center,
 
     if (center) {
         pos.y += units.y*0.5 - obj_height*0.5;
+        pos.x += units.x*0.5 - obj_height*0.5;
     }
 
     return pos;
@@ -782,6 +790,14 @@ void draw_obj(Screen screen, Screen_Object obj) {
                 DrawCircleV(pos, world_obj_rect.width / 2, RED);
             } break;
 
+            case EVENT_WAIT: {
+                DrawTextureEx(screen.wait_texture, world_obj_pos, 0, 1.0f, WHITE);
+            } break;
+
+            case EVENT_MAIL: {
+                DrawTextureEx(screen.mail_texture, world_obj_pos, 0, 1.0f, WHITE);
+            } break;
+
             default: ASSERT(0 && "Unreachable statement");
         }
 
@@ -832,6 +848,7 @@ void parse_attrs(Lexer *lexer, Attr_List *attrs);
 
 Screen_Object parse_event_task(Lexer *lexer, Attr_List attrs, Key_Value *symbol,  Screen *screen, int col, char *namespace);
 Screen_Object parse_event_starter(Lexer *lexer, Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace);
+Screen_Object parse_event_with_sprite(Lexer *lexer, Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace);
 Screen_Object parse_event_gateway(Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace);
 Screen_Object parse_event_end(Screen *screen, int col);
 
@@ -1042,6 +1059,9 @@ void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace) {
     switch (event_kind) {
         case EVENT_TASK:    obj = parse_event_task(lexer, attrs, kv, screen, col, namespace);    break;
         case EVENT_STARTER: obj = parse_event_starter(lexer, attrs, kv, screen, col, namespace); break;
+        case EVENT_WAIT:
+        case EVENT_MAIL:
+            obj = parse_event_with_sprite(lexer, attrs, kv, screen, col, namespace);             break;
         case EVENT_GATEWAY: obj = parse_event_gateway(attrs, kv, screen, col, namespace);        break;
         case EVENT_END:     obj = parse_event_end(screen, col);                                  break;
         default: ASSERT(0 && "Unreachable statement");
@@ -1134,6 +1154,31 @@ Screen_Object parse_event_starter(Lexer *lexer, Attr_List attrs, Key_Value *symb
     };
 }
 
+Screen_Object parse_event_with_sprite(Lexer *lexer, Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace) {
+    char buffer[MAX_TOKEN_LEN];
+    int row_number = 1;
+
+    Attr *points = get_attr(attrs, "points");
+    if (points) {
+        symb_name(buffer, namespace, points->value);
+        memcpy(symbol->value.as.event.points_to, buffer, MAX_TOKEN_LEN);
+    }
+
+    Attr *row = get_attr(attrs, "row");
+    if (row) {
+        row_number = translate_row(lexer, row->value);
+    }
+
+    return (Screen_Object) {
+        .rect = {
+            .height = 64,
+            .width = 64,
+            .x = col,
+            .y = screen->rows + row_number
+        },
+    };
+}
+
 Screen_Object parse_event_gateway(Attr_List attrs, Key_Value *symbol, Screen *screen, int col, char *namespace) {
     char buffer[MAX_TOKEN_LEN];
     int row_number = 1;
@@ -1182,6 +1227,14 @@ Screen_Object parse_event_end(Screen *screen, int col) {
 Event_Kind translate_event(const char *event) {
     if (strcmp(event, "starter") == 0) {
         return EVENT_STARTER;
+    }
+
+    if (strcmp(event, "wait") == 0) {
+        return EVENT_WAIT;
+    }
+
+    if (strcmp(event, "mail") == 0) {
+        return EVENT_MAIL;
     }
 
     if (strcmp(event, "task") == 0) {
@@ -1236,9 +1289,22 @@ int main(int argc, char **argv) {
     InitWindow(screen.settings.width, screen.settings.height + screen.settings.header_height, screen.title);
     screen.settings.font = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT_RUBIK].size, screen.settings.font_size, NULL, 0);
     screen.settings.font_header = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT].size, screen.settings.font_size_header, NULL, 0);
+
+    Image mail = LoadImageFromMemory(".png", resources[RESOURCE_EMAIL].data, resources[RESOURCE_EMAIL].size);
+    screen.mail_texture = LoadTextureFromImage(mail);
+
+    Image relogio = LoadImageFromMemory(".png", resources[RESOURCE_RELOGIO].data, resources[RESOURCE_RELOGIO].size);
+    screen.wait_texture = LoadTextureFromImage(relogio);
+
+
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
+
+        // DrawTextureEx(email_texture, VECTOR(50, 50), 0, 1, WHITE);
+        // DrawTextureRec(email_texture, )
+
+
         draw_header(screen);
         for (size_t i = 0; i < screen.objs_cnt; i++) {
             Screen_Object obj = screen.screen_objects[i];

@@ -12,7 +12,8 @@
 
     <subprocess id='segundo' name='Opa'>
         <events>
-            <starter id='start2' points='primeiro.event1'/>
+            <col/>
+            <wait id='wait' points='primeiro.event1'/>
         </events>
     </subprocess>
 

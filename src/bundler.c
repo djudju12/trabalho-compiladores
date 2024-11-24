@@ -3,8 +3,10 @@
 #include <inttypes.h>
 
 char *RESOURCE_NAMES_AND_PATHS[][2] = {
-    { "FONT", "./resources/font.ttf" },
+    { "FONT", "./resources/font.ttf"         },
     { "FONT_RUBIK", "./resources/font_2.ttf" },
+    { "EMAIL", "./resources/email.png"       },
+    { "RELOGIO", "./resources/relogio.png"   },
 };
 
 #define BANDLE_FILE_PATH "./src/bundle.c"
