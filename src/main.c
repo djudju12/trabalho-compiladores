@@ -83,12 +83,6 @@ typedef enum {
     SYMB_SUBPROCESS
 } Symb_Kind;
 
-typedef enum {
-    RECT_MID = 0,
-    RECT_UP,
-    RECT_DOWN
-} Rect_Sides;
-
 typedef struct {
     union {
 
@@ -435,10 +429,13 @@ typedef struct {
 
     Texture2D wait_texture;
     Texture2D mail_texture;
+    Texture2D rectangle;
+    Texture2D rect_rexture;
+
+    Font font;
+    Font font_header;
 
     struct {
-        Font font;
-        Font font_header;
         int font_size;
         int font_size_header;
         float line_thickness;
@@ -459,14 +456,14 @@ void init_screen(Screen *screen) {
     screen->settings.rows_per_sub = 3;
     screen->settings.sub_height = 300;
     screen->settings.sub_width = 150 * screen->cols;
-    screen->settings.line_thickness = 1.2f;
+    screen->settings.line_thickness = 2;
     screen->settings.events_padding = 10;
 }
 
 void setup_screen(Screen *screen) {
     screen->settings.height = (screen->rows / screen->settings.rows_per_sub) * screen->settings.sub_height;
     screen->settings.width = screen->settings.sub_width;
-    screen->settings.font_size = 10;
+    screen->settings.font_size = 13;
     screen->settings.font_size_header = screen->settings.font_size*1.5;
 }
 
@@ -526,7 +523,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     Vector2 start = {0};
     Vector2 three_lines = {0};
     Vector2 end = {0};
-    bool uses_three_lines = false;
 
     int diff_iy = from.rect.y - to.rect.y;
     int diff_ix = from.rect.x - to.rect.x;
@@ -548,7 +544,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
                 .y = world_from.y + from.rect.height,
                 .x = world_from.x + from.rect.width/2.0
             };
-            uses_three_lines = true;
             end.x = world_to.x;
             end.y = world_to.y + to.rect.height/2.0;
             start.x = three_lines.x;
@@ -559,7 +554,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
                 .y = world_from.y + from.rect.height,
                 .x = world_from.x + from.rect.width/2.0
             };
-            uses_three_lines = true;
             end.x = world_to.x + to.rect.width;
             end.y = world_to.y + to.rect.height/2.0;
             start.x = three_lines.x;
@@ -576,7 +570,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
                 .y = world_from.y,
                 .x = world_from.x + from.rect.width/2.0
             };
-            uses_three_lines = true;
             end.x = world_to.x;
             end.y = world_to.y + to.rect.height/2.0;
             start.x = three_lines.x;
@@ -587,7 +580,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
                 .y = world_from.y,
                 .x = world_from.x + from.rect.width/2.0
             };
-            uses_three_lines = true;
             end.x = world_to.x + to.rect.width;
             end.y = world_to.y + to.rect.height/2.0;
             start.x = three_lines.x;
@@ -600,7 +592,6 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
         }
     }
 
-    DrawCircleV(uses_three_lines ? three_lines : start, 3, BLACK);
     draw_arrow_head(screen, start, end);
 }
 
@@ -660,15 +651,15 @@ void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int
 
 void draw_header(Screen screen) {
     const float spacing = screen.settings.font_size_header / 10.0;
-    Vector2 text_measure = MeasureTextEx(screen.settings.font_header, screen.title, screen.settings.font_size_header, spacing);
+    Vector2 text_measure = MeasureTextEx(screen.font_header, screen.title, screen.settings.font_size_header, spacing);
 
     Vector2 pos = {
         .x = screen.settings.width / 2 - text_measure.x / 2,
         .y = screen.settings.header_height / 2 - text_measure.y / 2
     };
 
-    DrawLineEx(VECTOR(0, screen.settings.header_height), VECTOR(screen.settings.width, screen.settings.header_height), screen.settings.line_thickness, BLACK);
-    DrawTextEx(screen.settings.font_header, screen.title, pos, screen.settings.font_size_header, spacing, BLACK);
+    // DrawLineEx(VECTOR(0, screen.settings.header_height), VECTOR(screen.settings.width, screen.settings.header_height), screen.settings.line_thickness, BLACK);
+    DrawTextEx(screen.font_header, screen.title, pos, screen.settings.font_size_header, spacing, BLACK);
 }
 
 void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
@@ -678,27 +669,27 @@ void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
         .x = world_obj_pos.x - screen.settings.sub_header_width,
         .y = world_obj_pos.y,
         .width = subprocess_obj.rect.width - 1,
-        .height = subprocess_obj.rect.height
+        .height = subprocess_obj.rect.height + 1
     };
 
     Rectangle sub_header = {
         .x = world_obj_pos.x - screen.settings.sub_header_width,
         .y = world_obj_pos.y,
         .width = screen.settings.sub_header_width,
-        .height = subprocess_obj.rect.height
+        .height = subprocess_obj.rect.height + 1
     };
 
     const float spacing = screen.settings.font_size_header / 10.0;
     const float rotation = -90;
 
-    Vector2 text_measure = MeasureTextEx(screen.settings.font_header, subprocess_obj.value->as.subprocess.name, screen.settings.font_size_header, spacing);
+    Vector2 text_measure = MeasureTextEx(screen.font_header, subprocess_obj.value->as.subprocess.name, screen.settings.font_size_header, spacing);
     Vector2 text_position = RECT_POS(sub_header);
     text_position.y += sub_header.height/2.0 + text_measure.x/2.0;
     text_position.x += sub_header.width/2.0 - text_measure.y/2.0;
 
-    DrawRectangleLinesEx(entire_row, screen.settings.line_thickness, BLACK);
-    DrawRectangleLinesEx(sub_header, screen.settings.line_thickness, BLACK);
-    DrawTextPro(screen.settings.font_header, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.settings.font_size_header, spacing, BLACK);
+    DrawRectangleLinesEx(entire_row, screen.settings.line_thickness/2.0, BLACK);
+    DrawRectangleLinesEx(sub_header, screen.settings.line_thickness/2.0, BLACK);
+    DrawTextPro(screen.font_header, subprocess_obj.value->as.subprocess.name, text_position, (Vector2) {0}, rotation, screen.settings.font_size_header, spacing, BLACK);
 }
 
 void draw_obj(Screen screen, Screen_Object obj) {
@@ -724,63 +715,11 @@ void draw_obj(Screen screen, Screen_Object obj) {
             case EVENT_TASK: {
                 DrawRectangleRounded(world_obj_rect, 0.3f, 0, WHITE);
                 DrawRectangleRoundedLinesEx(world_obj_rect, 0.3f, 0, screen.settings.line_thickness, BLACK);
-                draw_fitting_text(world_obj_rect, screen.settings.font, obj.value->as.event.title, screen.settings.font_size, 5);
+                draw_fitting_text(world_obj_rect, screen.font, obj.value->as.event.title, screen.settings.font_size, 5);
             } break;
 
             case EVENT_GATEWAY: {
-                // DrawRectanglePro(world_obj_rect, VECTOR(0, 0), 45.0f, BLACK); // TODO
-                Vector2 top = {
-                    .x = world_obj_rect.x + world_obj_rect.width/2.0,
-                    .y = world_obj_rect.y
-                };
-
-                Vector2 bottom = {
-                    .x = world_obj_rect.x + world_obj_rect.width/2.0,
-                    .y = world_obj_rect.y + world_obj_rect.height
-                };
-
-                Vector2 left = {
-                    .x = world_obj_rect.x,
-                    .y = world_obj_rect.y + world_obj_rect.height/2.0
-                };
-
-                Vector2 right = {
-                    .x = world_obj_rect.x + world_obj_rect.width,
-                    .y = world_obj_rect.y + world_obj_rect.height/2.0
-                };
-
-                DrawLineEx(top, right, screen.settings.line_thickness, BLACK);
-                DrawLineEx(right, bottom, screen.settings.line_thickness, BLACK);
-                DrawLineEx(bottom, left, screen.settings.line_thickness, BLACK);
-                DrawLineEx(left, top, screen.settings.line_thickness, BLACK);
-
-                Vector2 center = {
-                    .x = world_obj_rect.x + world_obj_rect.width/2.0,
-                    .y = world_obj_rect.y + world_obj_rect.height/2.0
-                };
-
-                Vector2 x00 = {
-                    .x = center.x - 10,
-                    .y = center.y - 10
-                };
-
-                Vector2 x01 = {
-                    .x = center.x + 10,
-                    .y = center.y + 10
-                };
-
-                Vector2 x10 = {
-                    .x = center.x + 10,
-                    .y = center.y - 10
-                };
-
-                Vector2 x11 = {
-                    .x = center.x - 10,
-                    .y = center.y + 10
-                };
-
-                DrawLineEx(x00, x01, screen.settings.line_thickness, BLACK);
-                DrawLineEx(x10, x11, screen.settings.line_thickness, BLACK);
+                DrawTexture(screen.rect_rexture, world_obj_pos.x, world_obj_pos.y, WHITE);
             } break;
 
             case EVENT_END: {
@@ -1183,29 +1122,20 @@ Screen_Object parse_event_gateway(Attr_List attrs, Key_Value *symbol, Screen *sc
     char buffer[MAX_TOKEN_LEN];
     int row_number = 1;
 
-    Attr *up = get_attr(attrs, "up");
-    if (up) {
-        symb_name(buffer, namespace, up->value);
-        memcpy(symbol->value.as.event.points_to[RECT_UP], buffer, MAX_TOKEN_LEN);
+    Attr *points = get_attr(attrs, "points");
+    if (points) {
+        int len = 0;
+        const char **words = TextSplit(points->value, ',', &len);
+        for (int i = 0; i < len && i < 3; i++) {
+            symb_name(buffer, namespace, words[i]);
+            memcpy(symbol->value.as.event.points_to[i], buffer, MAX_TOKEN_LEN);
+        }
     }
-
-    Attr *mid = get_attr(attrs, "mid");
-    if (mid) {
-        symb_name(buffer, namespace, mid->value);
-        memcpy(symbol->value.as.event.points_to[RECT_MID], buffer, MAX_TOKEN_LEN);
-    }
-
-    Attr *down = get_attr(attrs, "down");
-    if (down) {
-        symb_name(buffer, namespace, down->value);
-        memcpy(symbol->value.as.event.points_to[RECT_DOWN], buffer, MAX_TOKEN_LEN);
-    }
-
 
     return (Screen_Object) {
         .rect = {
-            .height = 80,
-            .width = 80,
+            .height = 32,
+            .width = 32,
             .x = col,
             .y = screen->rows + row_number
         },
@@ -1269,6 +1199,21 @@ int translate_row(Lexer *lexer, const char *row) {
     FAIL;
 }
 
+void load_resources(Screen *screen) {
+    screen->font = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT_RUBIK].size, screen->settings.font_size, NULL, 0);
+    screen->font_header = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT].size, screen->settings.font_size_header, NULL, 0);
+
+    Image mail = LoadImageFromMemory(".png", resources[RESOURCE_EMAIL].data, resources[RESOURCE_EMAIL].size);
+    screen->mail_texture = LoadTextureFromImage(mail);
+
+    Image relogio = LoadImageFromMemory(".png", resources[RESOURCE_RELOGIO].data, resources[RESOURCE_RELOGIO].size);
+    screen->wait_texture = LoadTextureFromImage(relogio);
+
+    Image rect = LoadImageFromMemory(".png", resources[RESOURCE_RECTANGLE].data, resources[RESOURCE_RECTANGLE].size);
+    screen->rect_rexture = LoadTextureFromImage(rect);
+
+}
+
 int main(int argc, char **argv) {
     char *program_name = shift_args(&argc, &argv);
     if (argc == 0) {
@@ -1287,14 +1232,8 @@ int main(int argc, char **argv) {
     setup_screen(&screen);
 
     InitWindow(screen.settings.width, screen.settings.height + screen.settings.header_height, screen.title);
-    screen.settings.font = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT_RUBIK].size, screen.settings.font_size, NULL, 0);
-    screen.settings.font_header = LoadFontFromMemory(".ttf", resources[RESOURCE_FONT_RUBIK].data, resources[RESOURCE_FONT].size, screen.settings.font_size_header, NULL, 0);
 
-    Image mail = LoadImageFromMemory(".png", resources[RESOURCE_EMAIL].data, resources[RESOURCE_EMAIL].size);
-    screen.mail_texture = LoadTextureFromImage(mail);
-
-    Image relogio = LoadImageFromMemory(".png", resources[RESOURCE_RELOGIO].data, resources[RESOURCE_RELOGIO].size);
-    screen.wait_texture = LoadTextureFromImage(relogio);
+    load_resources(&screen);
 
 
     while (!WindowShouldClose()) {
@@ -1308,10 +1247,12 @@ int main(int argc, char **argv) {
         draw_header(screen);
         for (size_t i = 0; i < screen.objs_cnt; i++) {
             Screen_Object obj = screen.screen_objects[i];
-            for (size_t j = 0; j < 3; j++) { // UP, MID, DOWN
-                Key_Value *to = get_symbol(&lexer.symbols, obj.value->as.event.points_to[j]);
-                if (to != NULL) {
-                    draw_arrow(screen, obj, screen.screen_objects[to->value.obj_id]);
+            if (obj.value->kind == SYMB_EVENT) {
+                for (size_t j = 0; j < 3; j++) {
+                    Key_Value *to = get_symbol(&lexer.symbols, obj.value->as.event.points_to[j]);
+                    if (to != NULL) {
+                        draw_arrow(screen, obj, screen.screen_objects[to->value.obj_id]);
+                    }
                 }
             }
         }

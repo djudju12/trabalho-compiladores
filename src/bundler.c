@@ -7,6 +7,7 @@ char *RESOURCE_NAMES_AND_PATHS[][2] = {
     { "FONT_RUBIK", "./resources/font_2.ttf" },
     { "EMAIL", "./resources/email.png"       },
     { "RELOGIO", "./resources/relogio.png"   },
+    { "RECTANGLE", "./resources/rect.png"    },
 };
 
 #define BANDLE_FILE_PATH "./src/bundle.c"

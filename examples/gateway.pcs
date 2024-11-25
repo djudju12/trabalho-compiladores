@@ -3,7 +3,7 @@
     <subprocess id='gateway' name='Gateway Subprocess'>
         <events>
             <starter id='start' points='gateway'/>
-            <gateway id='gateway' up='task_1' mid='task_2' down='second_subprocess.task_3' />
+            <gateway id='gateway' points='task_1,task_2,second_subprocess.task_3' />
             <col>
                 <task id='task_1' row='up' name='Task 1'/>
                 <task id='task_2' row='mid' name='Task 2' points='finale'/>

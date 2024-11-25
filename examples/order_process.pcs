@@ -1,0 +1,43 @@
+<process name='Order Process'>
+    <subprocess name='Sales' id='sales'>
+        <events>
+            <starter id='start' points='receive_order'/>
+            <task id='receive_order' name='Receive Order' points='finance.check_credit' />
+            <col/>
+            <col/>
+            <col/>
+            <col/>
+            <col/>
+            <end id='order_failed' />
+        </events>
+    </subprocess>
+
+    <subprocess name='Finance' id='finance'>
+        <events>
+            <col/>
+            <col/>
+            <task id='check_credit' name='Check Credit' points='credit_ok_gateway' />
+            <gateway id='credit_ok_gateway' points='sales.order_failed,warehouse.fulfill_order'/>
+            <col/>
+            <col/>
+            <task id='send_invoice' name='Send Invoice' points='order_complete'/>
+            <end id='order_complete' />
+        </events>
+    </subprocess>
+
+    <subprocess name='Warehouse' id='warehouse'>
+        <events>
+            <col/>
+            <col/>
+            <col/>
+            <col/>
+            <task id='fulfill_order' name='Fulfill Order' points='order_filfilled_gateway' />
+            <gateway id='order_filfilled_gateway' points='sales.order_failed,finance.send_invoice'/>
+            <col/>
+            <col/>
+            <col/>
+            <col/>
+        </events>
+    </subprocess>
+
+</process>
