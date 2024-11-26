@@ -1,0 +1,38 @@
+<process name='Sacando DINHEIRO'>
+
+    <subprocess id='atm' name='Caixa'>
+        <events>
+            <col />
+            <task id='saque_ou_deposito' name='Saque ou Deposito' points='saque_ou_deposito_gateway'/>
+            <gateway id='saque_ou_deposito_gateway' points='deposito,saque' />
+            <col >
+                <task id='deposito' name='Deposito' row='up' points='senha_deposito'/>
+                <task id='saque' name='Saque' row='down' points='senha_saque'/>
+            </col>
+            <col >
+                <task id='senha_deposito' name='Insere PIN' row='up' points='valor_deposito'/>
+                <task id='senha_saque' name='Insere PIN' row='down'  points='valor_saque'/>
+            </col>
+            <col >
+                <task id='valor_deposito' name='Selecione o valor' row='up' points='recibo_deposito'/>
+                <task id='valor_saque' name='Selecione o valor' row='down' points='cliente.complete_saque'/>
+            </col>
+
+            <task id='recibo_deposito' name='Imprima o recibo' points='end_deposito'/>
+            <end id='end_deposito'/>
+
+        </events>
+    </subprocess>
+
+
+    <subprocess id='cliente' name='Cliente'>
+        <events>
+            <starter id='start' points='inserir_cartao' />
+            <task id='inserir_cartao' name='Insere o cartao' points='atm.saque_ou_deposito'/>
+            <col num='4' />
+            <task id='complete_saque' name='Complete o saque' points='end_saque'/>
+            <end id='end_saque' />
+        </events>
+    </subprocess>
+
+</process>

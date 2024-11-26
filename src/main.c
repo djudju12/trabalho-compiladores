@@ -610,43 +610,17 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
     draw_arrow_head(screen, start, end);
 }
 
-int count_text_lines(Rectangle rect, const char **words, int word_count, int font_size) {
-    int space_left = rect.width;
-    Vector2 pos = {.x = rect.x, .y = rect.y};
-    int total_lines = 1;
-    for (int i = 0; i < word_count; i++) {
-        int word_len = MeasureText(words[i], font_size) + font_size;
-        if (word_len > space_left) {
-            space_left = rect.width - word_len;
-            pos.y += font_size;
-            pos.x = rect.x;
-            total_lines++;
-        } else {
-            space_left -= word_len;
-        }
-
-        pos.x += word_len;
-    }
-
-    return total_lines;
-}
-
 void draw_fitting_text(Rectangle rect, Font font, char *text, int font_size, int margin) {
     int word_count = 0;
     const char **words = TextSplit(text, ' ', &word_count);
 
-    int total_lines = count_text_lines(rect, words, word_count, font_size);
-    if ((total_lines * font_size) > rect.height) {
-        font_size = rect.height / total_lines;
-    }
-
     rect.x += margin;
     rect.y += margin;
-    rect.width -= margin * 2;
-    rect.height -= margin * 2;
-    Vector2 pos = {.x = rect.x, .y = rect.y};
+    rect.width -= margin;
+    rect.height -= margin;
 
-    const float spacing = font_size / 8.0;
+    Vector2 pos = {.x = rect.x, .y = rect.y};
+    const float spacing = font_size / 10.0;
     int space_left = rect.width;
     for (int i = 0; i < word_count; i++) {
         int word_len = MeasureTextEx(font, words[i], font_size, spacing).x + font_size;
@@ -1281,10 +1255,6 @@ int main(int argc, char **argv) {
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(WHITE);
-
-        // DrawTextureEx(email_texture, VECTOR(50, 50), 0, 1, WHITE);
-        // DrawTextureRec(email_texture, )
-
 
         draw_header(screen);
         for (size_t i = 0; i < screen.objs_cnt; i++) {

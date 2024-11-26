@@ -7,11 +7,42 @@ Na linguagem teremos alguns conceitos chaves, sendo eles:
 - Subprocessos: Um arquivo poderá possuir diversos subprocessos e ele representa etapas do processo principal;
 - Eventos: Um subprocesso será descrito através de diferentes eventos.
 
-O seguinte exemplo define um processo para fazer macarrão, possuindo eventos em dois subprocessos: o do mercado e o da cozinha.
+O seguinte exemplo define um processo para pedir uma pizza:
 
 Exemplo de entrada:
 
+```xml
+<process name='Pedindo uma Pizza'>
+
+    <subprocess id='cliente' name='Cliente'>
+        <events>
+            <starter id='start' points='escolhendo'/>
+            <task id='escolhendo' name='Escolhendo a pizza' points='pedindo'/>
+            <task id='pedindo' name='Fazendo o pedido' points='pizzaria.recebendo_pedido'/>
+
+            <col num='2'/>
+            <task id='recebe_pizza' name='Recebe a Pizza' points='so_comer'/>
+
+            <end id='so_comer' />
+        </events>
+    </subprocess>
+
+    <subprocess id='pizzaria' name='Pizzaria'>
+        <events>
+            <col num='2' />
+            <task id='recebendo_pedido' name='Recebe Pedido' points='assando' />
+            <task id='assando' name='Assando Pedido' points='wait' />
+            <wait id='wait' points='delivery' />
+            <task id='delivery' name='Entrega' points='cliente.recebe_pizza' />
+
+        </events>
+    </subprocess>
+
+</process>
+```
+
 Exemplo de saída:
+![pizza](pizza.png)
 
 
 ### Analisador léxico
@@ -124,22 +155,16 @@ typedef struct {
 
 O parsing do código fornecido é feito através do uso de tradução dirigida por sintaxe e análise preditiva. Segue a especificação da grámatica:
 
-```
+```go
 processo ::= '<process name=' str '>' lista_subprocesso '</process>'
 
-lista_subprocesso ::= subprocesso |
-                      subprocesso lista_subprocesso
-
+lista_subprocesso ::= subprocesso | subprocesso lista_subprocesso
 subprocesso ::= '<subprocess' lista_atribuicao '>' eventos '</subprocess>'
 
 eventos ::= '<events>' lista_evento '</events>'
+lista_evento ::= evento | evento lista_evento
 
-lista_evento ::= evento |
-                 evento lista_evento
-
-evento ::= evento_tipo |
-           coluna
-
+evento ::= evento_tipo | coluna
 evento_tipo ::=  '<starter' lista_atribuicao '/>' |
                  '<task' lista_atribuicao '/>'    |
                  '<gateway' lista_atribuicao '/>' |
@@ -147,15 +172,100 @@ evento_tipo ::=  '<starter' lista_atribuicao '/>' |
 
 coluna ::= '<col>' lista_evento '</col>' | '<col/>'
 
-lista_atribuicao ::= atribuicao |
-                     atribuicao lista_atribuicao
+lista_atribuicao ::= atribuicao | atribuicao lista_atribuicao
 
 atribuicao ::= id '=' str
-
 id ::= [a-zA-Z]+[a-zA-Z0-9_]*
-
 str ::= "'" .* "'"
 
 ```
 
 ### Exemplos
+
+#### Sacando Dinheiro
+
+```xml
+<process name='Sacando DINHEIRO'>
+
+    <subprocess id='atm' name='Caixa'>
+        <events>
+            <col />
+            <task id='saque_ou_deposito' name='Saque ou Deposito' points='saque_ou_deposito_gateway'/>
+            <gateway id='saque_ou_deposito_gateway' points='deposito,saque' />
+            <col >
+                <task id='deposito' name='Deposito' row='up' points='senha_deposito'/>
+                <task id='saque' name='Saque' row='down' points='senha_saque'/>
+            </col>
+            <col >
+                <task id='senha_deposito' name='Insere PIN' row='up' points='valor_deposito'/>
+                <task id='senha_saque' name='Insere PIN' row='down'  points='valor_saque'/>
+            </col>
+            <col >
+                <task id='valor_deposito' name='Selecione o valor' row='up' points='recibo_deposito'/>
+                <task id='valor_saque' name='Selecione o valor' row='down' points='cliente.complete_saque'/>
+            </col>
+
+            <task id='recibo_deposito' name='Imprima o recibo' points='end_deposito'/>
+            <end id='end_deposito'/>
+
+        </events>
+    </subprocess>
+
+
+    <subprocess id='cliente' name='Cliente'>
+        <events>
+            <starter id='start' points='inserir_cartao' />
+            <task id='inserir_cartao' name='Insere o cartao' points='atm.saque_ou_deposito'/>
+            <col num='4' />
+            <task id='complete_saque' name='Complete o saque' points='end_saque'/>
+            <end id='end_saque' />
+        </events>
+    </subprocess>
+
+</process>
+```
+
+
+
+![sacando](sacando_dinheiro.png)
+
+#### Reembolso
+
+```xml
+<process name='Reembolso'>
+
+    <subprocess id='contabilidade' name='Contabilidade'>
+        <events>
+            <col num='4'/>
+            <task id='realiza_pagamento' name='Realiza Pagamento' points='espera_pagamento'/>
+            <wait id='espera_pagamento' points='empregado.recebe_pagamento' />
+        </events>
+    </subprocess>
+
+
+    <subprocess id='gerente' name='Gerente'>
+        <events>
+            <col />
+            <mail id='recebe_formulario' points='revisa_reembolso'/>
+            <task id='revisa_reembolso' name='Revisa reembolso' points='revisao_gateway' />
+            <gateway id='revisao_gateway' points='empregado.recusado,contabilidade.realiza_pagamento' />
+        </events>
+    </subprocess>
+
+    <subprocess id='empregado' name='Empregado'>
+        <events>
+            <starter id='start' points='envia_formulario'/>
+            <task id='envia_formulario' name='Envia o Formulario' points='gerente.recebe_formulario'/>
+            <col />
+            <end id='recusado' />
+            <col />
+            <col />
+            <task name='Recebe Pagamento' id='recebe_pagamento' points='aceito'/>
+            <end id='aceito' />
+        </events>
+    </subprocess>
+
+</process>
+```
+
+![reembolso](reembolso.png)

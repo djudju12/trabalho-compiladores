@@ -1,0 +1,34 @@
+<process name='Reembolso'>
+
+    <subprocess id='contabilidade' name='Contabilidade'>
+        <events>
+            <col num='4'/>
+            <task id='realiza_pagamento' name='Realiza Pagamento' points='espera_pagamento'/>
+            <wait id='espera_pagamento' points='empregado.recebe_pagamento' />
+        </events>
+    </subprocess>
+
+
+    <subprocess id='gerente' name='Gerente'>
+        <events>
+            <col />
+            <mail id='recebe_formulario' points='revisa_reembolso'/>
+            <task id='revisa_reembolso' name='Revisa reembolso' points='revisao_gateway' />
+            <gateway id='revisao_gateway' points='empregado.recusado,contabilidade.realiza_pagamento' />
+        </events>
+    </subprocess>
+
+    <subprocess id='empregado' name='Empregado'>
+        <events>
+            <starter id='start' points='envia_formulario'/>
+            <task id='envia_formulario' name='Envia o Formulario' points='gerente.recebe_formulario'/>
+            <col />
+            <end id='recusado' />
+            <col />
+            <col />
+            <task name='Recebe Pagamento' id='recebe_pagamento' points='aceito'/>
+            <end id='aceito' />
+        </events>
+    </subprocess>
+
+</process>
