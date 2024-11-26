@@ -7,12 +7,6 @@ PROGRAM_NAME=bpmn
 build: src/main.c bin/ build_raylib bundle
 	$(CC) -o bin/$(PROGRAM_NAME) src/main.c $(CFLAGS) $(LDFLAGS)
 
-run: build
-	./bin/$(PROGRAM_NAME) ./examples/simples.pcs
-
-run_gateway: build
-	./bin/$(PROGRAM_NAME) ./examples/gateway.pcs
-
 bin/:
 	mkdir -p bin
 
