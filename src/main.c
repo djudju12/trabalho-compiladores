@@ -463,7 +463,7 @@ void init_screen(Screen *screen) {
 void setup_screen(Screen *screen) {
     screen->settings.height = (screen->rows / screen->settings.rows_per_sub) * screen->settings.sub_height;
     screen->settings.width = screen->settings.sub_width;
-    screen->settings.font_size = 13;
+    screen->settings.font_size = 12;
     screen->settings.font_size_header = screen->settings.font_size*1.5;
 }
 
@@ -474,7 +474,7 @@ size_t push_obj(Screen *screen, Screen_Object obj) {
 }
 
 
-Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center, int padding) {
+Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_width, int obj_height, bool center, int padding) {
     Vector2 units = {
         screen.settings.width / screen.cols,
         screen.settings.height / screen.rows
@@ -487,7 +487,7 @@ Vector2 grid2world(Screen screen, Vector2 grid_pos, int obj_height, bool center,
 
     if (center) {
         pos.y += units.y*0.5 - obj_height*0.5;
-        pos.x += units.x*0.5 - obj_height*0.5;
+        pos.x += units.x*0.5 - obj_width*0.5;
     }
 
     return pos;
@@ -517,11 +517,26 @@ void draw_arrow_head(Screen screen, Vector2 start, Vector2 end) {
 }
 
 void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
-    Vector2 world_from = grid2world(screen, RECT_POS(from.rect), from.rect.height, true, screen.settings.events_padding);
-    Vector2 world_to = grid2world(screen, RECT_POS(to.rect), to.rect.height, true, screen.settings.events_padding);
+    Vector2 world_from = grid2world(
+        screen,
+        RECT_POS(from.rect),
+        from.rect.width,
+        from.rect.height,
+        true,
+        screen.settings.events_padding
+    );
+
+    Vector2 world_to = grid2world(
+        screen,
+        RECT_POS(to.rect),
+        to.rect.width,
+        to.rect.height,
+        true,
+        screen.settings.events_padding
+    );
 
     Vector2 start = {0};
-    Vector2 three_lines = {0};
+    Vector2 line = {0};
     Vector2 end = {0};
 
     int diff_iy = from.rect.y - to.rect.y;
@@ -540,25 +555,25 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
         }
     } else if (diff_iy < 0) { // from acima
         if (diff_ix < 0) { // from atras
-            three_lines = (Vector2) {
+            line = (Vector2) {
                 .y = world_from.y + from.rect.height,
                 .x = world_from.x + from.rect.width/2.0
             };
             end.x = world_to.x;
             end.y = world_to.y + to.rect.height/2.0;
-            start.x = three_lines.x;
+            start.x = line.x;
             start.y = end.y;
-            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+            DrawLineEx(line, start, screen.settings.line_thickness, BLACK);
         } else if (diff_ix > 0) { // from na frente
-            three_lines = (Vector2) {
+            line = (Vector2) {
                 .y = world_from.y + from.rect.height,
                 .x = world_from.x + from.rect.width/2.0
             };
             end.x = world_to.x + to.rect.width;
             end.y = world_to.y + to.rect.height/2.0;
-            start.x = three_lines.x;
+            start.x = line.x;
             start.y = end.y;
-            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+            DrawLineEx(line, start, screen.settings.line_thickness, BLACK);
         } else {
             start.x = end.x = world_from.x + from.rect.width/2.0;
             start.y = world_from.y + from.rect.height;
@@ -566,25 +581,25 @@ void draw_arrow(Screen screen, Screen_Object from, Screen_Object to) {
         }
     } else { // from abaixo
         if (diff_ix < 0) { // from atras
-            three_lines = (Vector2) {
+            line = (Vector2) {
                 .y = world_from.y,
                 .x = world_from.x + from.rect.width/2.0
             };
             end.x = world_to.x;
             end.y = world_to.y + to.rect.height/2.0;
-            start.x = three_lines.x;
+            start.x = line.x;
             start.y = end.y;
-            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+            DrawLineEx(line, start, screen.settings.line_thickness, BLACK);
         } else if (diff_ix > 0) { // from na frente
-            three_lines = (Vector2) {
+            line = (Vector2) {
                 .y = world_from.y,
                 .x = world_from.x + from.rect.width/2.0
             };
             end.x = world_to.x + to.rect.width;
             end.y = world_to.y + to.rect.height/2.0;
-            start.x = three_lines.x;
+            start.x = line.x;
             start.y = end.y;
-            DrawLineEx(three_lines, start, screen.settings.line_thickness, BLACK);
+            DrawLineEx(line, start, screen.settings.line_thickness, BLACK);
         } else {
             start.x = end.x = world_from.x + from.rect.width/2.0;
             start.y = world_from.y;
@@ -663,7 +678,14 @@ void draw_header(Screen screen) {
 }
 
 void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
-    Vector2 world_obj_pos = grid2world(screen, RECT_POS(subprocess_obj.rect), subprocess_obj.rect.height, false, 0);
+    Vector2 world_obj_pos = grid2world(
+        screen,
+        RECT_POS(subprocess_obj.rect),
+        subprocess_obj.rect.width,
+        subprocess_obj.rect.height,
+        false,
+        0
+    );
 
     Rectangle entire_row = {
         .x = world_obj_pos.x - screen.settings.sub_header_width,
@@ -694,7 +716,14 @@ void draw_subprocess_header(Screen screen, Screen_Object subprocess_obj) {
 
 void draw_obj(Screen screen, Screen_Object obj) {
     if (obj.value->kind == SYMB_EVENT) {
-        Vector2 world_obj_pos = grid2world(screen, RECT_POS(obj.rect), obj.rect.height, true, screen.settings.events_padding);
+        Vector2 world_obj_pos = grid2world(
+            screen,
+            RECT_POS(obj.rect),
+            obj.rect.width,
+            obj.rect.height,
+            true,
+            screen.settings.events_padding
+        );
 
         Rectangle world_obj_rect = {
             .x = world_obj_pos.x,
@@ -780,7 +809,7 @@ void parse(Lexer *lexer, Screen *screen);
 void parse_process(Lexer *lexer, Screen *screen);
 void parse_subprocess(Lexer *lexer, Screen *screen);
 void parse_events(Lexer *lexer, Screen *screen, char *namespace);
-void parse_columns(Lexer *lexer, Screen *screen, int col, char *namespace);
+void parse_columns(Lexer *lexer, Screen *screen, int *cur_col, char *namespace);
 
 void parse_event(Lexer *lexer, Screen *screen, int col, char *namespace);
 void parse_attrs(Lexer *lexer, Attr_List *attrs);
@@ -916,7 +945,8 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
         if (lexer->token.kind == TOKEN_TYPE) {
             parse_event(lexer, screen, col++, namespace);
         } else if (lexer->token.kind == TOKEN_COL) {
-            parse_columns(lexer, screen, col++, namespace);
+            parse_columns(lexer, screen, &col, namespace);
+            col++;
         } else {
             PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
             FAIL;
@@ -924,8 +954,20 @@ void parse_events(Lexer *lexer, Screen *screen, char *namespace) {
     }
 }
 
-void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
+void parse_columns(Lexer *lexer, Screen *screen, int *cur_col, char *namespace) {
     next_token_fail_if_eof(lexer);
+    if (lexer->token.kind == TOKEN_ID) {
+        if (strncmp(lexer->token.value, "num", 4) != 0) {
+            PRINT_ERROR_FMT(lexer, "Invalid attribute %s for column", lexer->token.value);
+            FAIL;
+        }
+
+        assert_next_token(lexer, TOKEN_ATR);
+        assert_next_token(lexer, TOKEN_STR);
+        *cur_col += (atoi(lexer->token.value) - 1);
+        next_token_fail_if_eof(lexer);
+    }
+
     if (lexer->token.kind == TOKEN_SLASH) {
         assert_next_token(lexer, TOKEN_CLTAG);
         return;
@@ -957,7 +999,7 @@ void parse_columns(Lexer *lexer, Screen *screen, int cur_col, char *namespace) {
         }
 
         if (lexer->token.kind == TOKEN_TYPE) {
-            parse_event(lexer, screen, cur_col, namespace);
+            parse_event(lexer, screen, *cur_col, namespace);
         } else {
             PRINT_ERROR_FMT(lexer, "Unexpected tag `<%s`", lexer->token.value);
             FAIL;
@@ -1110,7 +1152,7 @@ Screen_Object parse_event_with_sprite(Lexer *lexer, Attr_List attrs, Key_Value *
 
     return (Screen_Object) {
         .rect = {
-            .height = 64,
+            .height = symbol->value.as.event.kind == EVENT_MAIL ? 32 :  64,
             .width = 64,
             .x = col,
             .y = screen->rows + row_number

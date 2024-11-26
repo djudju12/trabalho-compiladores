@@ -1,0 +1,20 @@
+<process name='Processo'>
+
+    <subprocess id='primeiro' name='Processo 1'>
+        <events>
+            <starter id='start' points='task1'/>
+            <task id='task1' name='Tarefa 1' points='mail'/>
+            <mail id='mail' points='gateway'/>
+            <gateway id='gateway' points='task2,task3'/>
+
+            <col>
+                <task id='task2' name='Tarefa 2' row='up' points='end'/>
+                <task id='task3' name='Tarefa 3' row='down' points='end'/>
+            </col>
+
+            <end id='end' />
+        </events>
+    </subprocess>
+
+
+</process>

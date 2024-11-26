@@ -1,0 +1,28 @@
+<process name='Pedindo uma Pizza'>
+
+    <subprocess id='cliente' name='Cliente'>
+        <events>
+            <starter id='start' points='escolhendo'/>
+            <task id='escolhendo' name='Escolhendo a pizza' points='pedindo'/>
+            <task id='pedindo' name='Fazendo o pedido' points='pizzaria.recebendo_pedido'/>
+
+            <col num='2'/>
+            <task id='recebe_pizza' name='Recebe a Pizza' points='so_comer'/>
+
+            <end id='so_comer' />
+        </events>
+    </subprocess>
+
+    <subprocess id='pizzaria' name='Pizzaria'>
+        <events>
+            <col num='2' />
+            <task id='recebendo_pedido' name='Recebe Pedido' points='assando' />
+            <task id='assando' name='Assando Pedido' points='wait' />
+            <wait id='wait' points='delivery' />
+            <task id='delivery' name='Entrega' points='cliente.recebe_pizza' />
+
+        </events>
+    </subprocess>
+
+
+</process>
